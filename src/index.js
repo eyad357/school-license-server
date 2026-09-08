@@ -10,6 +10,7 @@ const pool = require('./db/pool');
 const adminRoutes = require('./routes/adminRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const app = express();
+app.set('trust proxy', 1);
 
 app.use('/admin', express.static(
   path.join(__dirname, 'admin', 'public')
