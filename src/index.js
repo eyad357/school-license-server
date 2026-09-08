@@ -57,6 +57,6 @@ app.get('/health', async (_req, res) => {
 
 const PORT = Number(process.env.PORT || 3100);
 
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`License Server running on http://127.0.0.1:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`License Server running on port ${PORT}`);
 });
