@@ -8,6 +8,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const pool = require('./db/pool');
 const adminRoutes = require('./routes/adminRoutes');
+const paymentRoutes = require('./routes/paymentRoutes');
 const app = express();
 
 app.use('/admin', express.static(
@@ -21,7 +22,15 @@ app.get('/admin', (_req, res) => {
 });
 
 app.use(helmet());
-app.use(express.json({ limit: '50kb' }));
+app.use(express.json({
+  limit: '50kb',
+  // Keep the raw bytes around so the MyFatoorah webhook handler can verify
+  // the HMAC signature over the exact payload received. This does not
+  // change parsing behavior for any other route.
+  verify: (req, _res, buf) => {
+    req.rawBody = buf;
+  },
+}));
 
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -33,6 +42,7 @@ const apiLimiter = rateLimit({
 app.use('/api/', apiLimiter);
 app.use('/api/v1/licenses', licenseRoutes);
 app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/payments', paymentRoutes);
 app.get('/health', async (_req, res) => {
   try {
     const result = await pool.query('SELECT NOW() AS time');
