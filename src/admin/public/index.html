@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>إدارة التراخيص</title>
+  <link rel="stylesheet" href="/admin/style.css">
+</head>
+<body>
+
+  <!-- Login -->
+  <section id="loginView" class="page">
+    <div class="card login-card">
+      <div class="logo">🔐</div>
+      <h1>إدارة التراخيص</h1>
+      <p class="muted">سجّل الدخول لإدارة تراخيص البرنامج.</p>
+
+      <form id="loginForm">
+        <label for="username">اسم المستخدم</label>
+        <input id="username" autocomplete="username" required>
+
+        <label for="password">كلمة المرور</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+
+        <button type="submit">تسجيل الدخول</button>
+
+        <div id="loginMessage" class="message"></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- Dashboard -->
+  <section id="dashboardView" class="page hidden">
+
+    <header class="topbar">
+      <div>
+        <h1>إدارة التراخيص</h1>
+        <div class="muted">لوحة التحكم</div>
+      </div>
+
+      <button id="logoutBtn" class="secondary">تسجيل الخروج</button>
+    </header>
+
+    <main class="container">
+
+      <!-- Statistics -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span>إجمالي التراخيص</span>
+          <strong id="totalCount">0</strong>
+        </div>
+
+        <div class="stat-card">
+          <span>نشطة</span>
+          <strong id="activeCount">0</strong>
+        </div>
+
+        <div class="stat-card">
+          <span>ملغاة</span>
+          <strong id="revokedCount">0</strong>
+        </div>
+
+        <div class="stat-card">
+          <span>منتهية</span>
+          <strong id="expiredCount">0</strong>
+        </div>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="card toolbar">
+        <div>
+          <h2>التراخيص</h2>
+          <div class="muted">إدارة مفاتيح البرنامج والعملاء والأجهزة.</div>
+        </div>
+
+        <div class="toolbar-actions">
+          <input id="searchInput" placeholder="بحث بالعميل أو المفتاح...">
+          <button id="refreshBtn" class="secondary">تحديث</button>
+          <button id="createLicenseBtn">+ ترخيص جديد</button>
+        </div>
+      </div>
+
+      <!-- Licenses table -->
+      <div class="card">
+        <div id="tableMessage" class="message"></div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>العميل</th>
+                <th>License Key</th>
+                <th>الحالة</th>
+                <th>الأجهزة</th>
+                <th>الخطة</th>
+                <th>الانتهاء</th>
+                <th>الإدارة</th>
+              </tr>
+            </thead>
+
+            <tbody id="licensesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </main>
+  </section>
+
+  <!-- Create License Modal -->
+  <div id="createModal" class="modal hidden">
+    <div class="modal-card">
+
+      <div class="modal-header">
+        <div>
+          <h2>إنشاء ترخيص جديد</h2>
+          <div class="muted">أدخل بيانات العميل والترخيص.</div>
+        </div>
+
+        <button class="icon-button" data-close="createModal">×</button>
+      </div>
+
+      <form id="createLicenseForm">
+
+        <label for="customerName">اسم العميل</label>
+        <input id="customerName" required>
+
+        <label for="customerEmail">البريد الإلكتروني</label>
+        <input id="customerEmail" type="email">
+
+        <label for="plan">الخطة</label>
+        <input id="plan" value="pro" required>
+
+        <label for="maxDevices">عدد الأجهزة المسموح بها</label>
+        <input id="maxDevices" type="number" min="1" value="1" required>
+
+        <label for="duration">مدة الترخيص</label>
+        <select id="duration">
+          <option value="lifetime">Lifetime</option>
+          <option value="1_month">شهر واحد</option>
+          <option value="3_months">3 شهور</option>
+          <option value="1_year">سنة</option>
+        </select>
+
+        <div id="createMessage" class="message"></div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary" data-close="createModal">
+            إلغاء
+          </button>
+          <button type="submit">إنشاء الترخيص</button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+<!-- Edit License Modal -->
+<div id="editModal" class="modal hidden">
+  <div class="modal-card">
+
+    <div class="modal-header">
+      <div>
+        <h2>تعديل الترخيص</h2>
+        <div id="editLicenseKey" class="muted"></div>
+      </div>
+
+      <button
+        class="icon-button"
+        data-close="editModal">
+        ×
+      </button>
+    </div>
+
+    <form id="editLicenseForm">
+
+      <input id="editLicenseId" type="hidden">
+
+      <label for="editMaxDevices">
+        عدد الأجهزة
+      </label>
+
+      <input
+        id="editMaxDevices"
+        type="number"
+        min="1"
+        required>
+
+      <label for="editPlan">
+        الخطة
+      </label>
+
+      <input
+        id="editPlan"
+        required>
+
+      <label>
+        الحالة الحالية للانتهاء
+      </label>
+
+      <div id="editCurrentExpiration" class="muted"></div>
+
+      <label for="editDuration">
+        مدة الترخيص
+      </label>
+
+      <select id="editDuration">
+        <option value="" selected>بدون تغيير</option>
+        <option value="lifetime">Lifetime</option>
+        <option value="1_month">شهر واحد</option>
+        <option value="3_months">3 شهور</option>
+        <option value="1_year">سنة</option>
+      </select>
+
+      <div class="muted small">
+        اختيار مدة جديدة سيعيد حساب تاريخ الانتهاء بدءًا من الآن. اترك "بدون تغيير" للحفاظ على تاريخ الانتهاء الحالي.
+      </div>
+
+      <div id="editMessage" class="message"></div>
+
+      <div class="modal-actions">
+
+        <button
+          type="button"
+          class="secondary"
+          data-close="editModal">
+          إلغاء
+        </button>
+
+        <button type="submit">
+          حفظ التعديلات
+        </button>
+
+      </div>
+
+    </form>
+
+  </div>
+</div>
+
+  <!-- Devices Modal -->
+  <div id="devicesModal" class="modal hidden">
+    <div class="modal-card large">
+
+      <div class="modal-header">
+        <div>
+          <h2>أجهزة الترخيص</h2>
+          <div id="devicesTitle" class="muted"></div>
+        </div>
+
+        <button class="icon-button" data-close="devicesModal">×</button>
+      </div>
+
+      <div id="devicesMessage" class="message"></div>
+
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>الجهاز</th>
+              <th>تاريخ التفعيل</th>
+              <th>آخر ظهور</th>
+              <th>الحالة</th>
+              <th>الإجراء</th>
+            </tr>
+          </thead>
+
+          <tbody id="devicesTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="/admin/app.js"></script>
+</body>
+</html>
