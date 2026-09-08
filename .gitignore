@@ -1,3 +1,4 @@
 node_modules/
 .env
 school_license_backup.sql
+*.dump
