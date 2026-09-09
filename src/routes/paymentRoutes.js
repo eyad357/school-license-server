@@ -9,7 +9,16 @@ const {
   processWebhookPayment,
   findOrderForCallback,
 } = require('../services/paymentService');
-const { verifyWebhookSignature } = require('../services/myfatoorahService');
+const { verifyWebhookSignature } = require('../services/paddleService');
+
+// Paddle events that can ever result in a license being created. Every
+// other event type (transaction.created, transaction.updated,
+// subscription.*, etc.) is acknowledged and ignored - nothing actionable
+// for this one-time-purchase flow.
+const LICENSE_ELIGIBLE_EVENTS = new Set([
+  'transaction.completed',
+  'transaction.paid',
+]);
 
 const router = express.Router();
 
@@ -59,9 +68,9 @@ router.post('/create', createLimiter, async (req, res) => {
   }
 });
 
-router.post('/myfatoorah/webhook', async (req, res) => {
+router.post('/paddle/webhook', async (req, res) => {
   try {
-    const signatureHeader = req.headers['myfatoorah-signature'];
+    const signatureHeader = req.headers['paddle-signature'];
     const rawBody = req.rawBody;
 
     if (!verifyWebhookSignature(rawBody, signatureHeader)) {
@@ -70,19 +79,16 @@ router.post('/myfatoorah/webhook', async (req, res) => {
     }
 
     const event = req.body || {};
+    const eventType = event.event_type || event.eventType;
+    const transactionId = event.data && event.data.id;
 
-    const paymentId =
-      (event.Data && (event.Data.PaymentId ?? event.Data.paymentId)) ??
-      event.PaymentId ??
-      event.paymentId;
-
-    if (!paymentId) {
-      // Nothing actionable in this event (e.g. a different EventType) -
-      // acknowledge so MyFatoorah doesn't keep retrying it.
+    if (!LICENSE_ELIGIBLE_EVENTS.has(eventType) || !transactionId) {
+      // Nothing actionable in this event (e.g. transaction.created,
+      // subscription.*) - acknowledge so Paddle doesn't keep retrying it.
       return res.status(200).json({ status: 'ignored' });
     }
 
-    const result = await processWebhookPayment(String(paymentId));
+    const result = await processWebhookPayment(String(transactionId));
 
     return res.status(200).json({ status: 'ok', ...result });
   } catch (error) {
@@ -115,16 +121,24 @@ router.get('/orders/:id', async (req, res) => {
 });
 
 router.get('/callback', async (req, res) => {
-  const paymentId = req.query.paymentId || req.query.PaymentId;
+  // Paddle's hosted checkout appends the transaction id to your configured
+  // redirect URL as `_ptxn` by default; also accept a couple of common
+  // alternate param names in case the Paddle dashboard redirect URL was
+  // customized.
+  const transactionId =
+    req.query._ptxn ||
+    req.query.transactionId ||
+    req.query.transaction_id ||
+    req.query.txn;
 
   res.set('Content-Type', 'text/html; charset=utf-8');
 
-  if (!paymentId) {
+  if (!transactionId) {
     return res.status(200).send(renderCallbackPage('pending', null));
   }
 
   try {
-    const order = await findOrderForCallback(String(paymentId));
+    const order = await findOrderForCallback(String(transactionId));
 
     if (!order) {
       return res.status(200).send(renderCallbackPage('pending', null));
