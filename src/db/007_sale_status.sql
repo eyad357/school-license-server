@@ -15,36 +15,31 @@
 -- name, a price or a sale date is marked 'sold'; everything else 'unsold'.
 -- payment_status is NOT invented for existing rows (stays NULL).
 --
--- Requires 004 -> 005 -> 006 to be applied first (checked below).
---
 -- Run it in ONE transaction (scripts/migrate.js does; or
 --   psql "$DATABASE_URL" --single-transaction -v ON_ERROR_STOP=1 -f src/db/007_sale_status.sql).
 -- Safe to run more than once.
 
--- Prerequisite check. The back-fill below reads customers.sale_price / sold_at /
--- name, which are created by 004_customer_management.sql. If 004 (and 005, 006)
--- were not applied to this database, stop with a clear message instead of the
--- misleading 'column "sale_price" does not exist'. Reads the catalog only.
+LOCK TABLE customers IN SHARE ROW EXCLUSIVE MODE;
+
+-- Prerequisite guard. The back-fill below reads customers.sale_price / sold_at, which are created by
+-- 004_customer_management.sql (the table only has id, name, email, created_at, updated_at before it).
+-- Running 007 on a database where 004 has not been APPLIED (a --plan of 007 alone does not count: a plan
+-- is rolled back) used to fail with: column "sale_price" does not exist. Fail early with a clear instruction.
 DO $$
 DECLARE
-    missing TEXT;
+    missing text;
 BEGIN
     SELECT string_agg(c, ', ' ORDER BY c) INTO missing
-    FROM unnest(ARRAY['customer_number', 'sale_price', 'currency', 'sold_at', 'notes', 'archived_at']) AS c
+    FROM unnest(ARRAY['customer_number', 'sale_price', 'sold_at']) AS c
     WHERE NOT EXISTS (
         SELECT 1 FROM information_schema.columns
         WHERE table_schema = current_schema() AND table_name = 'customers' AND column_name = c
     );
-
     IF missing IS NOT NULL THEN
-        RAISE EXCEPTION
-            '007 needs migration 004 first: customers is missing column(s) %. Apply in order: 004_customer_management.sql, 005_products_platform.sql, 006_events_audit.sql, then 007_sale_status.sql.',
-            missing;
+        RAISE EXCEPTION '007 needs customers.% from migration 004. Apply 004_customer_management.sql first (or run: node scripts/migrate.js --plan --all).', missing;
     END IF;
 END
 $$;
-
-LOCK TABLE customers IN SHARE ROW EXCLUSIVE MODE;
 
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS sale_status VARCHAR(10) NOT NULL DEFAULT 'unsold';
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS payment_status VARCHAR(10);

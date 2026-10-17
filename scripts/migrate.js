@@ -7,6 +7,11 @@
  *                                            would change, then ROLLS BACK. Nothing is saved.
  *   node scripts/migrate.js --apply [file]   executes, verifies, then COMMITs.
  *
+ *   node scripts/migrate.js --plan --all     dry run of 004 -> 005 -> 006 -> 007 TOGETHER in one transaction
+ *                                            (each file needs the previous ones; a plan of 007 alone on a
+ *                                            database that has not APPLIED 004 cannot succeed)
+ *   node scripts/migrate.js --apply --all    applies all four in ONE transaction (all or nothing)
+ *
  * Default file: src/db/004_customer_management.sql (pass src/db/005_products_platform.sql for the multi-product migration;
  * run 004 first, then 005, 006, 007 - each is its own transaction and each is idempotent)
  * Reads DATABASE_URL from the environment (or .env). It never prints secrets.
@@ -20,6 +25,9 @@
 
 const fs = require('fs');
 const path = require('path');
+
+// Ordered; each file depends on the previous ones.
+const ALL_MIGRATIONS = ['004_customer_management.sql', '005_products_platform.sql', '006_events_audit.sql', '007_sale_status.sql'];
 
 const DESTRUCTIVE = /\b(DROP\s+(TABLE|COLUMN|SCHEMA|DATABASE|INDEX|CONSTRAINT|TRIGGER|FUNCTION)|TRUNCATE|DELETE\s+FROM|ALTER\s+TABLE\s+\w+\s+DROP|RENAME\s+(TO|COLUMN))\b/i;
 
@@ -205,6 +213,7 @@ async function main() {
   const args = process.argv.slice(2);
   const mode = args.includes('--apply') ? 'apply' : args.includes('--plan') ? 'plan' : null;
   const fileArg = args.find((a) => !a.startsWith('--'));
+  const all = args.includes('--all');
 
   if (!mode) {
     console.error('Usage: node scripts/migrate.js (--plan | --apply) [file.sql]');
@@ -220,10 +229,10 @@ async function main() {
     return;
   }
 
-  const file = path.resolve(
-    fileArg || path.join(__dirname, '..', 'src', 'db', '004_customer_management.sql')
-  );
-  const sql = fs.readFileSync(file, 'utf8');
+  const dbDir = path.join(__dirname, '..', 'src', 'db');
+  const file = path.resolve(fileArg || path.join(dbDir, '004_customer_management.sql'));
+  const files = all ? ALL_MIGRATIONS.map((f) => path.join(dbDir, f)) : [file];
+  const sql = files.map((f) => fs.readFileSync(f, 'utf8')).join('\n;\n');
 
   const { Client } = require('pg');
   const client = new Client({ connectionString: process.env.DATABASE_URL });
@@ -240,7 +249,7 @@ async function main() {
   }
 
   console.log(`Mode: ${mode.toUpperCase()}`);
-  console.log(`File: ${path.relative(process.cwd(), file)}`);
+  console.log(`File: ${files.map((f) => path.relative(process.cwd(), f)).join(' + ')}`);
   console.log(`Target database: ${dbName} @ ${host}`);
 
   await client.connect();
@@ -272,6 +281,7 @@ module.exports = {
   assertNonDestructive,
   snapshotProtected,
   PROTECTED_TABLES,
+  ALL_MIGRATIONS,
 };
 
 if (require.main === module) {
