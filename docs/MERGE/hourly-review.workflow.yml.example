@@ -1,0 +1,28 @@
+# EXAMPLE ONLY - not active (lives outside .github/workflows). Copy there only after approval.
+name: hourly-review
+on:
+  schedule: [{ cron: "17 */3 * * *" }]   # every 3h to stay inside free minutes; change to hourly if wanted
+  workflow_dispatch:
+permissions: { contents: read, issues: write }
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Service health (read-only, dummy key)
+        env: { BASE: "${{ vars.LICENSE_BASE_URL }}" }
+        run: |
+          code=$(curl -s -o r.json -w '%{http_code}' -XPOST "$BASE/api/v1/licenses/validate" -H 'content-type: application/json' -d '{"licenseKey":"MONITOR-DUMMY","deviceId":"monitor","productId":"school-accreditation"}')
+          echo "http=$code" | tee -a report.txt; grep -q '"invalid"' r.json || { echo "unexpected response" >> report.txt; echo FAIL=1 >> $GITHUB_ENV; }
+      - name: Recent changes on main
+        run: git log --since="3 hours ago" --oneline | tee -a report.txt
+      - name: Dependency audit
+        run: npm ci --omit=dev && npm audit --omit=dev | tee -a report.txt
+      - name: Open issue on failure
+        if: env.FAIL == '1'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({...context.repo, title: 'Hourly review failed', body: 'See run ' + context.runId })

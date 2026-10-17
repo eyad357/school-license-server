@@ -1,7 +1,10 @@
 'use strict';
 
 const pool = require('../db/pool');
-const { generateLicenseKey, PRODUCT_ID } = require('./licenseService');
+const { generateLicenseKey } = require('./licenseService');
+const { recordEvent } = require('./eventService');
+const audit = require('./auditService');
+const { assertProductUsableForNewLicenses } = require('./productService');
 
 // The four supported license durations. The UI may only ever send one of
 // these values; the server is the sole authority on the resulting
@@ -66,7 +69,8 @@ function licenseTypeForDuration(duration) {
 
 async function createCustomerAndLicense({
   customer = {},
-  productId = PRODUCT_ID,
+  productId,
+  fromPayment = false,
   maxDevices = 1,
   duration = 'lifetime',
   plan = 'lifetime',
@@ -103,28 +107,27 @@ async function createCustomerAndLicense({
         `
         INSERT INTO customers (
           name,
-          email
+          email,
+          sale_status,
+          payment_status
         )
-        VALUES ($1, $2)
+        VALUES ($1, $2, 'sold', $3)
         RETURNING id, name, email
         `,
-        [name, email]
+        [name, email, fromPayment ? 'paid' : null]
       );
 
       customerId = customerResult.rows[0].id;
     }
 
-    const productResult = await client.query(
-      `
-      SELECT product_id
-      FROM products
-      WHERE product_id = $1
-      `,
-      [productId]
-    );
-
-    if (productResult.rowCount === 0) {
-      throw new Error('Product not found.');
+    // Product must be chosen explicitly, exist and be active (no silent default).
+    if (fromPayment) {
+      // A customer has already PAID: the license is issued even if the product
+      // was administratively disabled afterwards. The product must still exist.
+      const exists = await client.query('SELECT product_id FROM products WHERE product_id = $1', [productId]);
+      if (exists.rowCount === 0) throw new Error('Product not found.');
+    } else {
+      await assertProductUsableForNewLicenses(productId, client);
     }
 
     let licenseKey;
@@ -269,59 +272,93 @@ async function listLicenseDevices(licenseId) {
   return result.rows;
 }
 
-async function resetDevice(activationId) {
-  const result = await pool.query(
-    `
-    UPDATE activations
-    SET deactivated_at = NOW()
-    WHERE id = $1
-      AND deactivated_at IS NULL
-    RETURNING id, license_id, device_id
-    `,
-    [activationId]
-  );
-
-  if (result.rowCount === 0) {
-    throw new Error('Active device activation not found.');
+/**
+ * Runs `fn(client)` in one transaction. Used by the state-changing admin operations so that
+ * the license change, its push event (outbox) and its audit row commit - or roll back - together.
+ */
+async function inTransaction(fn) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const out = await fn(client);
+    await client.query('COMMIT');
+    return out;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
   }
-
-  return {
-    activationId: result.rows[0].id,
-    licenseId: result.rows[0].license_id,
-    deviceDbId: result.rows[0].device_id,
-  };
 }
 
-async function revokeLicense(licenseId) {
-  const result = await pool.query(
-    `
-    UPDATE licenses
-    SET
-      status = 'REVOKED',
-      updated_at = NOW()
-    WHERE id = $1
-    RETURNING
-      id,
-      license_key,
-      product_id,
-      status,
-      max_devices,
-      expires_at,
-      customer_id,
-      plan,
-      license_type
-    `,
-    [licenseId]
-  );
+async function resetDevice(activationId, ctx = {}) {
+  return inTransaction(async (client) => {
+    const result = await client.query(
+      `
+      UPDATE activations
+      SET deactivated_at = NOW()
+      WHERE id = $1
+        AND deactivated_at IS NULL
+      RETURNING id, license_id, device_id
+      `,
+      [activationId]
+    );
 
-  if (result.rowCount === 0) {
-    throw new Error('License not found.');
-  }
+    if (result.rowCount === 0) {
+      throw new Error('Active device activation not found.');
+    }
 
-  return result.rows[0];
+    const row = result.rows[0];
+    const lic = await client.query('SELECT product_id, license_key FROM licenses WHERE id = $1', [row.license_id]);
+    await recordEvent(client, { licenseId: row.license_id, productId: lic.rows[0].product_id, type: 'license.device_reset' });
+    await audit.record(client, { ...ctx, action: 'license.reset_device', targetType: 'license', targetId: row.license_id,
+      meta: { key: audit.maskKey(lic.rows[0].license_key), activationId: row.id } }, { strict: true });
+
+    return {
+      activationId: row.id,
+      licenseId: row.license_id,
+      deviceDbId: row.device_id,
+    };
+  });
 }
 
-async function reactivateLicense(licenseId) {
+async function revokeLicense(licenseId, ctx = {}) {
+  return inTransaction(async (client) => {
+    const result = await client.query(
+      `
+      UPDATE licenses
+      SET
+        status = 'REVOKED',
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING
+        id,
+        license_key,
+        product_id,
+        status,
+        max_devices,
+        expires_at,
+        customer_id,
+        plan,
+        license_type
+      `,
+      [licenseId]
+    );
+
+    if (result.rowCount === 0) {
+      throw new Error('License not found.');
+    }
+
+    const row = result.rows[0];
+    await recordEvent(client, { licenseId: row.id, productId: row.product_id, type: 'license.revoked' });
+    await audit.record(client, { ...ctx, action: 'license.revoke', targetType: 'license', targetId: row.id,
+      meta: { key: audit.maskKey(row.license_key), productId: row.product_id } }, { strict: true });
+
+    return row;
+  });
+}
+
+async function reactivateLicense(licenseId, ctx = {}) {
   const result = await pool.query(
     `
     SELECT
@@ -355,7 +392,8 @@ async function reactivateLicense(licenseId) {
     );
   }
 
-  const updated = await pool.query(
+  return inTransaction(async (client) => {
+  const updated = await client.query(
     `
     UPDATE licenses
     SET
@@ -376,7 +414,12 @@ async function reactivateLicense(licenseId) {
     [licenseId]
   );
 
-  return updated.rows[0];
+  const row = updated.rows[0];
+  await recordEvent(client, { licenseId: row.id, productId: row.product_id, type: 'license.reactivated' });
+  await audit.record(client, { ...ctx, action: 'license.reactivate', targetType: 'license', targetId: row.id,
+    meta: { key: audit.maskKey(row.license_key), productId: row.product_id } }, { strict: true });
+  return row;
+  });
 }
 async function updateLicense(
   licenseId,
@@ -384,7 +427,8 @@ async function updateLicense(
     maxDevices,
     duration,
     plan,
-  }
+  },
+  ctx = {}
 ) {
   const currentResult = await pool.query(
     `
@@ -458,7 +502,8 @@ async function updateLicense(
     throw new Error('plan is too long.');
   }
 
-  const result = await pool.query(
+  return inTransaction(async (client) => {
+  const result = await client.query(
     `
     UPDATE licenses
     SET
@@ -489,8 +534,14 @@ async function updateLicense(
     ]
   );
 
-  return result.rows[0];
+  const row = result.rows[0];
+  await recordEvent(client, { licenseId: row.id, productId: row.product_id, type: 'license.updated' });
+  await audit.record(client, { ...ctx, action: 'license.update', targetType: 'license', targetId: row.id,
+    meta: { key: audit.maskKey(row.license_key), maxDevices: row.max_devices, expiresAt: row.expires_at, plan: row.plan } }, { strict: true });
+  return row;
+  });
 }
+
 module.exports = {
   createCustomerAndLicense,
   listLicenses,

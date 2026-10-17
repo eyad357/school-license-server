@@ -31,8 +31,7 @@ CREATE TABLE IF NOT EXISTS activations (
     license_id UUID NOT NULL REFERENCES licenses(id) ON DELETE CASCADE,
     device_id UUID NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
     activated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deactivated_at TIMESTAMPTZ NULL,
-
+    deactivated_at TIMESTAMPTZ NULL
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_activations_one_active_per_device

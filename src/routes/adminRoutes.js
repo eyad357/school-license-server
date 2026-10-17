@@ -1,5 +1,7 @@
 'use strict';
 
+const rateLimit = require('express-rate-limit');
+
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -15,10 +17,22 @@ const {
 } = require('../services/adminLicenseService');
 
 const { requireAdmin } = require('../middleware/adminAuth');
+const audit = require('../services/auditService');
+const { recordEvent } = require('../services/eventService');
 
 const router = express.Router();
 
-router.post('/login', async (req, res) => {
+// Brute-force guard for the admin password (on top of the general API limit). Only failed logins are counted.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: Number(process.env.LOGIN_RATE_LIMIT_MAX) || 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { status: 'error', message: 'Too many failed login attempts. Try again later.' },
+});
+
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { username, password } = req.body || {};
 
@@ -30,6 +44,7 @@ router.post('/login', async (req, res) => {
     }
 
     if (username !== process.env.ADMIN_USERNAME) {
+      await audit.record(pool, { admin: 'unknown', action: 'auth.login_failed', targetType: 'auth', ip: req.ip, meta: {} });
       return res.status(401).json({
         status: 'unauthorized',
         message: 'Invalid credentials.',
@@ -42,6 +57,7 @@ router.post('/login', async (req, res) => {
     );
 
     if (!valid) {
+      await audit.record(pool, { admin: String(username).slice(0, 100), action: 'auth.login_failed', targetType: 'auth', ip: req.ip, meta: {} });
       return res.status(401).json({
         status: 'unauthorized',
         message: 'Invalid credentials.',
@@ -58,6 +74,8 @@ router.post('/login', async (req, res) => {
         expiresIn: '8h',
       }
     );
+
+    await audit.record(pool, { admin: String(username).slice(0, 100), action: 'auth.login', targetType: 'auth', ip: req.ip, meta: {} });
 
     return res.json({
       status: 'ok',
@@ -119,6 +137,10 @@ router.post('/licenses', requireAdmin, async (req, res) => {
       plan: req.body.plan || 'lifetime',
     });
 
+    await audit.record(pool, { ...audit.fromReq(req), action: 'license.create', targetType: 'license',
+      targetId: result.license && result.license.id,
+      meta: { key: audit.maskKey(result.license && result.license.license_key), productId: result.license && result.license.product_id } });
+
     return res.status(201).json({
       status: 'created',
       ...result,
@@ -135,7 +157,7 @@ router.post('/licenses', requireAdmin, async (req, res) => {
 
 router.post('/licenses/:id/reset-device', requireAdmin, async (req, res) => {
   try {
-    const result = await resetDevice(req.params.id);
+    const result = await resetDevice(req.params.id, audit.fromReq(req));
 
     return res.json({
       status: 'ok',
@@ -153,7 +175,7 @@ router.post('/licenses/:id/reset-device', requireAdmin, async (req, res) => {
 
 router.post('/licenses/:id/revoke', requireAdmin, async (req, res) => {
   try {
-    const license = await revokeLicense(req.params.id);
+    const license = await revokeLicense(req.params.id, audit.fromReq(req));
 
     return res.json({
       status: 'ok',
@@ -171,7 +193,7 @@ router.post('/licenses/:id/revoke', requireAdmin, async (req, res) => {
 
 router.post('/licenses/:id/reactivate', requireAdmin, async (req, res) => {
   try {
-    const license = await reactivateLicense(req.params.id);
+    const license = await reactivateLicense(req.params.id, audit.fromReq(req));
 
     return res.json({
       status: 'ok',
@@ -188,34 +210,50 @@ router.post('/licenses/:id/reactivate', requireAdmin, async (req, res) => {
 });
 
 router.delete('/licenses/:id', requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+
   try {
-    const result = await pool.query(
+    await client.query('BEGIN');
+
+    const result = await client.query(
       `
       DELETE FROM licenses
       WHERE id = $1
-      RETURNING id, license_key
+      RETURNING id, license_key, product_id
       `,
       [req.params.id]
     );
 
     if (result.rowCount === 0) {
+      await client.query('ROLLBACK');
+
       return res.status(404).json({
         status: 'not_found',
         message: 'License not found.',
       });
     }
 
+    const row = result.rows[0];
+    // Same transaction as the DELETE: devices still holding this key learn about it.
+    await recordEvent(client, { licenseId: row.id, productId: row.product_id, type: 'license.deleted' });
+    await audit.record(client, { ...audit.fromReq(req), action: 'license.delete', targetType: 'license', targetId: row.id,
+      meta: { key: audit.maskKey(row.license_key), productId: row.product_id } }, { strict: true });
+    await client.query('COMMIT');
+
     return res.json({
       status: 'deleted',
-      licenseId: result.rows[0].id,
+      licenseId: row.id,
     });
   } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
     console.error('Delete license error:', error);
 
     return res.status(500).json({
       status: 'server_error',
       message: 'Internal server error.',
     });
+  } finally {
+    client.release();
   }
 });
 
@@ -227,7 +265,8 @@ router.patch('/licenses/:id', requireAdmin, async (req, res) => {
         maxDevices: req.body.maxDevices,
         duration: req.body.duration,
         plan: req.body.plan,
-      }
+      },
+      audit.fromReq(req)
     );
 
     return res.json({

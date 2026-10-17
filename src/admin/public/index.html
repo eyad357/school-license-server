@@ -41,59 +41,133 @@
       <button id="logoutBtn" class="secondary">تسجيل الخروج</button>
     </header>
 
+    <nav class="tabs" role="tablist">
+      <button type="button" id="tabLicenses" class="seg active">التراخيص</button>
+      <button type="button" id="tabProducts" class="seg">البرامج</button>
+    </nav>
+
     <main class="container">
 
+     <div id="licensesPanel">
       <!-- Statistics -->
-      <div class="stats-grid">
+      <div class="stats-grid stats-5">
         <div class="stat-card">
           <span>إجمالي التراخيص</span>
           <strong id="totalCount">0</strong>
         </div>
-
         <div class="stat-card">
           <span>نشطة</span>
           <strong id="activeCount">0</strong>
         </div>
-
         <div class="stat-card">
           <span>ملغاة</span>
           <strong id="revokedCount">0</strong>
         </div>
-
         <div class="stat-card">
           <span>منتهية</span>
           <strong id="expiredCount">0</strong>
+        </div>
+        <div class="stat-card">
+          <span>بيانات ناقصة</span>
+          <strong id="incompleteCount">0</strong>
         </div>
       </div>
 
       <!-- Toolbar -->
       <div class="card toolbar">
         <div>
-          <h2>التراخيص</h2>
-          <div class="muted">إدارة مفاتيح البرنامج والعملاء والأجهزة.</div>
+          <h2>العملاء والتراخيص</h2>
+          <div class="muted">إدارة العملاء ومفاتيح البرنامج والأجهزة وبيانات البيع.</div>
         </div>
 
         <div class="toolbar-actions">
-          <input id="searchInput" placeholder="بحث بالعميل أو المفتاح...">
           <button id="refreshBtn" class="secondary">تحديث</button>
-          <button id="createLicenseBtn">+ ترخيص جديد</button>
+          <button id="createLicenseBtn">+ إنشاء تراخيص</button>
         </div>
       </div>
 
-      <!-- Licenses table -->
+      <!-- Filters + export -->
+      <div class="card filters">
+        <input id="searchInput" type="search" maxlength="100"
+               placeholder="بحث برقم العميل أو الاسم أو المفتاح (جزئي)...">
+
+        <select id="productFilter" aria-label="البرنامج">
+          <option value="">كل البرامج</option>
+        </select>
+
+        <select id="statusFilter" aria-label="حالة الترخيص">
+          <option value="">كل الحالات</option>
+          <option value="ACTIVE">نشط</option>
+          <option value="REVOKED">ملغى</option>
+          <option value="EXPIRED">منتهي</option>
+        </select>
+
+        <select id="archivedFilter" aria-label="الأرشيف">
+          <option value="exclude">إخفاء المؤرشفين</option>
+          <option value="include">إظهار الكل</option>
+          <option value="only">المؤرشفون فقط</option>
+        </select>
+
+        <select id="saleStatusFilter" aria-label="حالة البيع">
+          <option value="">البيع: الكل</option>
+          <option value="unsold">غير مباع</option>
+          <option value="sold">مباع</option>
+        </select>
+
+        <select id="paymentStatusFilter" aria-label="حالة الدفع">
+          <option value="">الدفع: الكل</option>
+          <option value="unpaid">غير مدفوع</option>
+          <option value="paid">مدفوع</option>
+          <option value="partial">جزئي</option>
+          <option value="none">غير محدد</option>
+        </select>
+
+        <select id="activationFilter" aria-label="حالة التفعيل">
+          <option value="">التفعيل: الكل</option>
+          <option value="activated">مفعّل</option>
+          <option value="not_activated">غير مفعّل</option>
+        </select>
+
+        <label class="check">
+          <input id="incompleteFilter" type="checkbox">
+          مباعة وبياناتها ناقصة
+        </label>
+
+        <span class="spacer"></span>
+
+        <select id="exportScope" aria-label="نطاق التصدير">
+          <option value="search">تصدير: النتائج الحالية</option>
+          <option value="all">تصدير: الكل</option>
+          <option value="selected">تصدير: المحدد</option>
+          <option value="unsold">تصدير: المفاتيح غير المباعة فقط</option>
+          <option value="sold">تصدير: التراخيص المباعة فقط</option>
+        </select>
+        <button id="exportXlsxBtn" class="secondary" type="button">Excel</button>
+        <button id="exportCsvBtn" class="secondary" type="button">CSV</button>
+      </div>
+
+      <!-- Records table -->
       <div class="card">
         <div id="tableMessage" class="message"></div>
 
         <div class="table-wrapper">
-          <table>
+          <table class="licenses-table">
             <thead>
               <tr>
-                <th>العميل</th>
-                <th>License Key</th>
-                <th>الحالة</th>
-                <th>الأجهزة</th>
-                <th>الخطة</th>
-                <th>الانتهاء</th>
+                <th class="narrow"><input id="selectAll" type="checkbox" aria-label="تحديد الكل"></th>
+                <th class="sortable" data-sort="customer_number">رقم العميل</th>
+                <th class="sortable" data-sort="customer_name">اسم العميل</th>
+                <th class="sortable" data-sort="license_key">مفتاح التفعيل</th>
+                <th>البرنامج</th>
+                <th class="sortable" data-sort="status">حالة الترخيص</th>
+                <th class="sortable" data-sort="sale_status">البيع</th>
+                <th class="sortable" data-sort="payment_status">الدفع</th>
+                <th>التفعيل</th>
+                <th class="sortable" data-sort="active_devices">الأجهزة</th>
+                <th class="sortable" data-sort="sale_price">سعر البيع</th>
+                <th>العملة</th>
+                <th class="sortable" data-sort="created_at">تاريخ الإنشاء</th>
+                <th class="sortable" data-sort="sold_at">تاريخ البيع</th>
                 <th>الإدارة</th>
               </tr>
             </thead>
@@ -101,55 +175,251 @@
             <tbody id="licensesTableBody"></tbody>
           </table>
         </div>
+
+        <div class="pager">
+          <button id="prevPage" class="secondary" type="button">السابق</button>
+          <span id="pageInfo" class="muted"></span>
+          <button id="nextPage" class="secondary" type="button">التالي</button>
+
+          <span class="spacer"></span>
+
+          <label class="check" for="pageSize">عدد الصفوف</label>
+          <select id="pageSize">
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+          </select>
+        </div>
       </div>
+
+     </div>
+
+     <!-- Products (programs) -->
+     <div id="productsPanel" class="hidden">
+       <div class="card toolbar">
+         <div>
+           <h2>البرامج</h2>
+           <div class="muted">كل ترخيص مرتبط ببرنامج واحد بمعرّف ثابت لا يمكن تغييره بعد الإنشاء.</div>
+         </div>
+         <div class="toolbar-actions">
+           <button id="addProductBtn" type="button">+ إضافة برنامج</button>
+         </div>
+       </div>
+       <div class="card">
+         <div id="productsMessage" class="message"></div>
+         <div class="table-wrapper">
+           <table>
+             <thead>
+               <tr>
+                 <th>المعرّف (productId)</th><th>الاسم</th><th>الوصف</th><th>الحالة</th>
+                 <th>التراخيص</th><th>العملاء</th><th>الأجهزة</th><th>الإدارة</th>
+               </tr>
+             </thead>
+             <tbody id="productsTableBody"></tbody>
+           </table>
+         </div>
+       </div>
+     </div>
 
     </main>
   </section>
 
-  <!-- Create License Modal -->
-  <div id="createModal" class="modal hidden">
+  <!-- Add / edit product -->
+  <div id="productModal" class="modal hidden">
     <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="productModalTitle">إضافة برنامج</h2>
+        <button class="icon-button" data-close="productModal">×</button>
+      </div>
+      <form id="productForm">
+        <label for="productIdInput">المعرّف الثابت (productId)</label>
+        <input id="productIdInput" maxlength="64" dir="ltr" placeholder="مثال: exam-manager" required>
+        <div class="muted small" id="productIdHint">حروف إنجليزية صغيرة وأرقام وشرطات. لا يمكن تغييره لاحقًا.</div>
+
+        <label for="productNameInput">الاسم الظاهر</label>
+        <input id="productNameInput" maxlength="255" required>
+
+        <label for="productDescInput">الوصف (اختياري)</label>
+        <textarea id="productDescInput" rows="3" maxlength="2000"></textarea>
+
+        <div id="productMessage" class="message"></div>
+        <div class="modal-actions">
+          <button type="button" class="secondary" data-close="productModal">إغلاق</button>
+          <button type="submit" id="productSubmitBtn">حفظ</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <!-- Create licenses (single or bulk) -->
+  <div id="createModal" class="modal hidden">
+    <div class="modal-card large">
 
       <div class="modal-header">
         <div>
-          <h2>إنشاء ترخيص جديد</h2>
-          <div class="muted">أدخل بيانات العميل والترخيص.</div>
+          <h2>إنشاء تراخيص</h2>
+          <div class="muted">من 1 إلى 1000 مفتاح في العملية الواحدة. تُنفَّذ كلها أو لا يُنفَّذ شيء.</div>
         </div>
-
         <button class="icon-button" data-close="createModal">×</button>
       </div>
 
       <form id="createLicenseForm">
 
-        <label for="customerName">اسم العميل</label>
-        <input id="customerName" required>
-
-        <label for="customerEmail">البريد الإلكتروني</label>
-        <input id="customerEmail" type="email">
-
-        <label for="plan">الخطة</label>
-        <input id="plan" value="pro" required>
-
-        <label for="maxDevices">عدد الأجهزة المسموح بها</label>
-        <input id="maxDevices" type="number" min="1" value="1" required>
-
-        <label for="duration">مدة الترخيص</label>
-        <select id="duration">
-          <option value="lifetime">Lifetime</option>
-          <option value="1_month">شهر واحد</option>
-          <option value="3_months">3 شهور</option>
-          <option value="1_year">سنة</option>
+        <label for="productSelect">البرنامج (إلزامي)</label>
+        <select id="productSelect" required>
+          <option value="">— اختر البرنامج —</option>
         </select>
+        <div class="muted small">لا يوجد برنامج افتراضي؛ يجب اختيار البرنامج صراحةً.</div>
+
+        <label for="quantityInput">عدد المفاتيح</label>
+        <input id="quantityInput" type="number" min="1" max="1000" value="1" required>
+        <div class="muted small">
+          تُنشأ مفاتيح فريدة بدون أي بيانات عميل (حالتها «غير مباع»، ولكل مفتاح رقم سجل ثابت).
+          اسم العميل والسعر وتاريخ البيع تُسجَّل لاحقًا داخل سجل المفتاح بعد البيع.
+        </div>
+
+        <div class="grid-2">
+          <div>
+            <label for="plan">الخطة</label>
+            <input id="plan" value="pro" maxlength="50" required>
+          </div>
+          <div>
+            <label for="maxDevices">الحد الأقصى للأجهزة</label>
+            <input id="maxDevices" type="number" min="1" max="1000" value="1" required>
+          </div>
+          <div>
+            <label for="duration">نوع / مدة الترخيص</label>
+            <select id="duration">
+              <option value="lifetime">Lifetime</option>
+              <option value="1_month">شهر واحد</option>
+              <option value="3_months">3 شهور</option>
+              <option value="1_year">سنة</option>
+            </select>
+          </div>
+        </div>
 
         <div id="createMessage" class="message"></div>
 
-        <div class="modal-actions">
-          <button type="button" class="secondary" data-close="createModal">
-            إلغاء
-          </button>
-          <button type="submit">إنشاء الترخيص</button>
+        <div id="createResult" class="hidden">
+          <div class="result-head">
+            <strong id="createResultTitle"></strong>
+            <span class="spacer"></span>
+            <button type="button" id="copyAllKeysBtn" class="secondary">نسخ كل المفاتيح</button>
+            <button type="button" id="exportBatchBtn" class="secondary">تصدير الدفعة (CSV)</button>
+            <button type="button" id="exportBatchXlsxBtn" class="secondary">تصدير الدفعة (Excel)</button>
+          </div>
+          <div class="table-wrapper result-table">
+            <table>
+              <thead>
+                <tr><th>#</th><th>رقم السجل</th><th>مفتاح التفعيل</th><th>حالة البيع</th><th></th></tr>
+              </thead>
+              <tbody id="createResultBody"></tbody>
+            </table>
+          </div>
         </div>
 
+        <div class="modal-actions">
+          <button type="button" class="secondary" data-close="createModal">إغلاق</button>
+          <button type="submit" id="createSubmitBtn">إنشاء الدفعة</button>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <!-- Customer details / edit / complete data -->
+  <div id="customerModal" class="modal hidden">
+    <div class="modal-card large">
+
+      <div class="modal-header">
+        <div>
+          <h2 id="customerModalTitle">بيانات العميل</h2>
+          <div id="customerModalSub" class="muted"></div>
+        </div>
+        <button class="icon-button" data-close="customerModal">×</button>
+      </div>
+
+      <form id="customerForm">
+        <input id="customerRef" type="hidden">
+        <input id="customerLicenseId" type="hidden">
+
+        <div class="grid-2">
+          <div>
+            <label for="cName">اسم العميل</label>
+            <input id="cName" maxlength="255">
+          </div>
+          <div>
+            <label for="cEmail">البريد الإلكتروني</label>
+            <input id="cEmail" type="email" maxlength="320">
+          </div>
+          <div>
+            <label for="cPhone">الهاتف / وسيلة الاتصال</label>
+            <input id="cPhone" maxlength="40" dir="ltr" inputmode="tel">
+          </div>
+          <div>
+            <label for="cSaleStatus">حالة البيع</label>
+            <select id="cSaleStatus">
+              <option value="unsold">غير مباع</option>
+              <option value="sold">مباع</option>
+            </select>
+          </div>
+          <div>
+            <label for="cPaymentStatus">حالة الدفع</label>
+            <select id="cPaymentStatus">
+              <option value="">غير محدد</option>
+              <option value="unpaid">غير مدفوع</option>
+              <option value="paid">مدفوع</option>
+              <option value="partial">جزئي</option>
+            </select>
+          </div>
+          <div>
+            <label for="cPrice">سعر البيع الفعلي</label>
+            <input id="cPrice" inputmode="decimal">
+          </div>
+          <div>
+            <label for="cCurrency">العملة</label>
+            <input id="cCurrency" list="currencies" maxlength="3" style="text-transform:uppercase">
+          </div>
+          <div>
+            <label for="cSoldAt">تاريخ البيع</label>
+            <input id="cSoldAt" type="date">
+          </div>
+          <div>
+            <label>تاريخ إنشاء السجل</label>
+            <div id="cCreatedAt" class="muted"></div>
+          </div>
+        </div>
+
+        <label for="cNotes">ملاحظات إدارية</label>
+        <textarea id="cNotes" rows="3" maxlength="2000" dir="auto"></textarea>
+
+        <div class="muted small">
+          تعديل هذه البيانات لا يغيّر المفتاح ولا حالة الترخيص ولا الأجهزة، ولا يؤثر على التفعيل.
+        </div>
+
+        <div id="customerMessage" class="message"></div>
+
+        <div id="customerLicensesBox">
+          <h3>التراخيص المرتبطة</h3>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr><th>المفتاح</th><th>الحالة</th><th>الأجهزة</th><th>الانتهاء</th></tr>
+              </thead>
+              <tbody id="customerLicensesBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary" data-close="customerModal">إغلاق</button>
+          <button type="button" id="archiveCustomerBtn" class="danger hidden">أرشفة العميل</button>
+          <button type="button" id="unarchiveCustomerBtn" class="success hidden">استعادة من الأرشيف</button>
+          <button type="submit" id="customerSaveBtn">حفظ</button>
+        </div>
       </form>
     </div>
   </div>

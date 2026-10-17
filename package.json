@@ -4,7 +4,17 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "start": "node src/index.js",
+    "test:db": "node --test --test-concurrency=1 test/db/*.test.js",
+    "test:all": "npm test && npm run test:db",
+    "migrate:plan": "node scripts/migrate.js --plan",
+    "migrate:apply": "node scripts/migrate.js --apply",
+    "migrate:plan:005": "node scripts/migrate.js --plan src/db/005_products_platform.sql",
+    "migrate:apply:005": "node scripts/migrate.js --apply src/db/005_products_platform.sql",
+    "migrate:plan:006": "node scripts/migrate.js --plan src/db/006_events_audit.sql",
+    "migrate:apply:006": "node scripts/migrate.js --apply src/db/006_events_audit.sql",
+    "signing:keygen": "node scripts/generate-signing-key.js ./signing-keys"
   },
   "keywords": [],
   "author": "",
@@ -13,10 +23,19 @@
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.4.2",
+    "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "jsdom": "^25.0.1"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.1"
+    }
   }
 }

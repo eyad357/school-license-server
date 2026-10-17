@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const pool = require('../db/pool');
+const { withSignature } = require('./signingService');
 
 const PRODUCT_ID = 'school-accreditation';
 
@@ -13,6 +14,24 @@ const STATUS = Object.freeze({
   DEVICE_LIMIT: 'device_limit_reached',
   DEACTIVATED: 'deactivated',
 });
+
+/**
+ * Product-disabled check on the transaction's OWN connection (a second pool checkout inside an open
+ * transaction starves the pool and deadlocks under concurrent activations). A SAVEPOINT keeps a failure
+ * (e.g. migration 005 not applied yet => no "status" column) from aborting the activation transaction:
+ * in that case the product is treated as active, exactly like before.
+ */
+async function productDisabledInTx(client, productId) {
+  await client.query('SAVEPOINT product_check');
+  try {
+    const r = await client.query('SELECT status FROM products WHERE product_id = $1', [productId]);
+    await client.query('RELEASE SAVEPOINT product_check');
+    return r.rowCount > 0 && r.rows[0].status === 'disabled';
+  } catch (_error) {
+    await client.query('ROLLBACK TO SAVEPOINT product_check');
+    return false;
+  }
+}
 
 function generateLicenseKey() {
   const parts = Array.from({ length: 4 }, () =>
@@ -126,11 +145,22 @@ async function activateLicense({
     if (existingActivation.rowCount > 0) {
       await client.query('COMMIT');
 
-      return {
+      return withSignature({
         status: STATUS.ACTIVE,
         message: 'License is already activated on this device.',
         expiresAt: license.expires_at,
         activationRef: existingActivation.rows[0].id,
+      }, { productId, licenseKey, deviceId });
+    }
+
+    // Administratively disabled program: devices that are already activated are
+    // answered above; no NEW device may be added.
+    if (await productDisabledInTx(client, productId)) { // same connection: a second pool checkout inside the transaction starves the pool under concurrent activations
+      await client.query('ROLLBACK');
+
+      return {
+        status: STATUS.INVALID,
+        message: 'This product is currently not available for new activations.',
       };
     }
 
@@ -169,12 +199,12 @@ async function activateLicense({
 
     await client.query('COMMIT');
 
-    return {
+    return withSignature({
       status: STATUS.ACTIVE,
       message: 'License activated successfully.',
       expiresAt: license.expires_at,
       activationRef: activationResult.rows[0].id,
-    };
+    }, { productId, licenseKey, deviceId });
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -262,12 +292,12 @@ async function validateLicense({
     [deviceId]
   );
 
-  return {
+  return withSignature({
     status: STATUS.ACTIVE,
     message: 'License is valid.',
     expiresAt: license.expires_at,
     activationRef: license.activation_ref,
-  };
+  }, { productId, licenseKey, deviceId });
 }
 
 async function deactivateLicense({

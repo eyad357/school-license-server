@@ -262,6 +262,7 @@ async function processWebhookPayment(transactionId) {
     const { license } = await createCustomerAndLicense({
       customer: { name: order.customer_name, email: order.customer_email },
       productId: order.product_id,
+      fromPayment: true,
       maxDevices: order.max_devices,
       duration: order.duration,
       plan: order.plan,

@@ -116,7 +116,8 @@ button.success {
 }
 
 .container {
-  width: min(1400px, calc(100% - 30px));
+  width: calc(100% - 32px);
+  max-width: 2200px;
   margin: 24px auto;
 }
 
@@ -356,4 +357,163 @@ td {
   background: #eef2f6;
   color: #263242;
   white-space: nowrap;
+}
+/* ---------- customer management additions ---------- */
+.stats-grid.stats-5 { grid-template-columns: repeat(5, 1fr); }
+
+textarea {
+  border: 1px solid #d8dee8;
+  border-radius: 9px;
+  padding: 11px 12px;
+  background: #fff;
+  outline: none;
+  font: inherit;
+  resize: vertical;
+}
+textarea:focus { border-color: #2878d7; }
+
+.small { font-size: 12px; }
+.spacer { flex: 1; }
+.narrow { width: 36px; }
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.filters input[type="search"] { flex: 1 1 260px; min-width: 200px; }
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.check input { padding: 0; }
+
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable:hover { color: #182230; }
+th.sortable.asc::after { content: " ▲"; font-size: 10px; }
+th.sortable.desc::after { content: " ▼"; font-size: 10px; }
+
+td bdi, .num { unicode-bidi: isolate; }
+.num { direction: ltr; text-align: right; white-space: nowrap; }
+.cust-no {
+  display: inline-block;
+  min-width: 34px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eaf2fd;
+  color: #1f5fae;
+  font-weight: 700;
+  text-align: center;
+  border: 0;
+  cursor: pointer;
+}
+.cust-no.none { background: #f3f4f6; color: #9ca3af; cursor: default; }
+.link-btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: #1f5fae;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: right;
+}
+.badge.warn { background: #fff3d6; color: #8a5a00; }
+tr.is-archived td { opacity: .55; }
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 14px;
+  flex-wrap: wrap;
+}
+
+.segmented { display: flex; gap: 6px; }
+.seg { background: #eef1f6; color: #425c80; }
+.seg.active { background: #2878d7; color: #fff; }
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 14px;
+}
+.grid-2 > div { display: flex; flex-direction: column; gap: 6px; }
+
+.result-head { display: flex; align-items: center; gap: 8px; margin: 8px 0; flex-wrap: wrap; }
+.result-table { max-height: 260px; overflow: auto; border: 1px solid #edf0f3; border-radius: 9px; }
+.result-table table { min-width: 560px; }
+.modal-card.large { max-height: 92vh; overflow-y: auto; }
+
+.toast {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 90vw;
+  padding: 12px 18px;
+  border-radius: 10px;
+  color: #fff;
+  background: #182230;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .25);
+  z-index: 1000;
+  font-size: 14px;
+}
+.toast.success { background: #1d7a40; }
+.toast.error { background: #b42318; }
+
+@media (max-width: 900px) {
+  .stats-grid.stats-5 { grid-template-columns: repeat(2, 1fr); }
+  .grid-2 { grid-template-columns: 1fr; }
+  table { min-width: 1000px; }
+}
+
+.tabs { display: flex; gap: 6px; padding: 0 24px; margin: 12px 0 0; }
+.tabs .seg.active { background: #2f5d9e; color: #fff; }
+
+/* ---- Licenses table: compact, and the actions column always visible ----
+   The table has 15 columns; in RTL the "الإدارة" column is the left-most one and
+   used to scroll out of view. It is now pinned to the left edge. */
+.licenses-table { min-width: 0; font-size: 13px; }
+.licenses-table th,
+.licenses-table td { padding: 9px 7px; vertical-align: middle; }
+.licenses-table th { white-space: nowrap; font-size: 12px; }
+.licenses-table .key { font-size: 11.5px; }
+.licenses-table .actions {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 4px;
+  justify-content: start;
+}
+.licenses-table .actions button { padding: 5px 8px; font-size: 12px; white-space: nowrap; }
+.licenses-table thead th:last-child,
+.licenses-table tbody td:last-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: #fff;
+  box-shadow: 8px 0 10px -8px rgba(15, 23, 42, .25);
+}
+.licenses-table thead th:last-child { z-index: 3; }
+.licenses-table tr.is-archived td:last-child { background: #f7f7f8; opacity: 1; }
+@media (max-width: 900px) { .licenses-table { min-width: 0; } }
+
+/* Fit the 15 columns to the available width instead of scrolling: on narrower screens the long
+   cells (license key, name, program, dates) wrap; nothing is hidden or removed. */
+@media (max-width: 1500px) {
+  .licenses-table .key-cell { flex-wrap: wrap; }
+  .licenses-table .key { white-space: normal; overflow-wrap: anywhere; max-width: 17ch; }
+  .licenses-table th { white-space: normal; line-height: 1.25; }
+  .licenses-table th.narrow { width: 28px; }
+}
+@media (max-width: 1250px) {
+  .licenses-table th,
+  .licenses-table td { padding: 8px 4px; }
+  .licenses-table { font-size: 12px; }
+  .licenses-table .actions button { padding: 4px 6px; font-size: 11px; }
 }

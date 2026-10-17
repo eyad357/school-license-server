@@ -1,0 +1,12 @@
+Mode: PLAN
+File: src/db/005_products_platform.sql
+Target database: license_plan_test @ 127.0.0.1
+Dry run finished: ROLLED BACK. Nothing was saved.
+
+Protected tables (row count + content fingerprint) - identical before/after:
+  licenses: 2 rows, md5 f7af12b593c8454c7023a91cc7a6f6cb
+  devices: 1 rows, md5 d0562de9587ad26fbe9c19b5ca27b6f7
+  activations: 0 rows, md5 (empty)
+  products: 1 rows, md5 9d16f0ae8f4745cd9b22bf058bd03684
+
+Customers numbered: 0
