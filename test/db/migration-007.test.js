@@ -78,3 +78,25 @@ test('007 constraints: invalid statuses and "paid but unsold" are refused by the
   await assert.rejects(() => pool.query("UPDATE customers SET payment_status = 'paid' WHERE id = $1", [id]), /customers_unsold_not_paid/);
   await pool.query("UPDATE customers SET sale_status = 'sold', payment_status = 'paid' WHERE id = $1", [id]);
 });
+
+test('007 on a database WITHOUT 004 fails with a clear prerequisite message, changes nothing, and works once 004-006 are applied', async () => {
+  await resetDatabase('legacy'); // schema + 002 + 003 only: no sale_price column
+  await pool.query("INSERT INTO customers (name) VALUES ('عميل قديم')");
+  const before = await snapshotProtected(pool);
+
+  await assert.rejects(() => run('saleStatus', 'apply'), (e) => {
+    assert.match(e.message, /007 needs migration 004 first/);
+    assert.match(e.message, /sale_price/);
+    assert.doesNotMatch(e.message, /does not exist/);
+    return true;
+  });
+  assert.equal(await hasColumn('sale_status'), false, 'rolled back: nothing added');
+  assert.deepEqual(await snapshotProtected(pool), before);
+
+  await run('customerManagement', 'apply');
+  await run('productsPlatform', 'apply');
+  await run('eventsAudit', 'apply');
+  await run('saleStatus', 'apply');
+  assert.equal(await hasColumn('sale_status'), true);
+  assert.deepEqual((await pool.query('SELECT sale_status, payment_status FROM customers')).rows, [{ sale_status: 'sold', payment_status: null }]);
+});
