@@ -613,6 +613,15 @@ async function deleteCustomerRecords(rows) {
   } catch (error) { toast(`فشل الحذف: ${error.message}`, 'error'); }
 }
 
+$('renumberBtn').addEventListener('click', async () => {
+  if (!confirm('سيتم إعادة ترقيم كل العملاء 1، 2، 3... بنفس الترتيب الحالي وإغلاق الفجوات.\nالتراخيص لن تتأثر.\n\nهل تريد المتابعة؟')) return;
+  try {
+    const data = await api('/records/renumber', { method: 'POST', body: JSON.stringify({}) });
+    toast(`تمت إعادة الترقيم (${data.total} عميل).`, 'success');
+    await loadRecords();
+  } catch (error) { toast(`فشل إعادة الترقيم: ${error.message}`, 'error'); }
+});
+
 $('deleteSelectedBtn').addEventListener('click', () => {
   const rows = [...state.selected].map(findRow).filter(Boolean);
   if (!rows.length) { toast('حدّد سجلات أولًا.', 'error'); return; }

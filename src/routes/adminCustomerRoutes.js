@@ -16,6 +16,7 @@ const {
   unarchiveCustomer,
   assignCustomerToLicense,
   deleteCustomersWithoutLicense,
+  renumberCustomers,
 } = require('../services/customerService');
 const {
   listRecords,
@@ -274,6 +275,15 @@ router.post(
     await audit.record(null, { ...audit.fromReq(req), action: 'customer.unarchive', targetType: 'customer', targetId: req.params.ref, meta: {} });
 
     res.json({ status: 'ok', customer });
+  })
+);
+
+// Close gaps in customer numbers: renumber all customers 1..N (order kept).
+router.post(
+  '/records/renumber',
+  requireAdmin,
+  handle('Renumber customers', async (req, res) => {
+    res.json({ status: 'ok', ...(await renumberCustomers(audit.fromReq(req))) });
   })
 );
 

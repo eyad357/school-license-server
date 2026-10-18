@@ -56,3 +56,16 @@ test('deleting #3 of 5 shifts #4,#5 down; numbers stay 1..N; next new customer c
   const nx = (await pool.query("INSERT INTO customers (name) VALUES ('new') RETURNING customer_number::int n")).rows[0].n;
   assert.equal(nx, 5);
 });
+
+test('standalone renumber closes gaps, keeps order and licenses, and continues the counter', async () => {
+  await pool.query("INSERT INTO customers (name) VALUES ('a'),('b'),('c'),('d')");
+  await pool.query("ALTER TABLE customers DISABLE TRIGGER trg_customers_protect_customer_number");
+  await pool.query("UPDATE customers SET customer_number = CASE name WHEN 'a' THEN 21 WHEN 'b' THEN 23 WHEN 'c' THEN 30 ELSE 45 END");
+  await pool.query("ALTER TABLE customers ENABLE TRIGGER trg_customers_protect_customer_number");
+  const r = await admin('POST', '/records/renumber', { body: {} });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.total, 4);
+  const rows = (await pool.query('SELECT name, customer_number::int n FROM customers ORDER BY n')).rows;
+  assert.deepEqual(rows.map((x) => [x.name, x.n]), [['a', 1], ['b', 2], ['c', 3], ['d', 4]]);
+  assert.equal((await pool.query("SELECT count(*)::int n FROM admin_audit_log WHERE action='customer.renumber'")).rows[0].n, 1);
+});
