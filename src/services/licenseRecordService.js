@@ -28,6 +28,7 @@ const SORT_COLUMNS = Object.freeze({
   active_devices: 'active_devices',
   sale_price: 'c.sale_price',
   sold_at: 'c.sold_at',
+  city: 'c.city',
   sale_status: 'c.sale_status',
   payment_status: 'c.payment_status',
   created_at: 'COALESCE(l.created_at, c.created_at)',
@@ -49,6 +50,11 @@ const SELECT_COLUMNS = `
   c.name AS customer_name,
   c.email AS customer_email,
   c.phone AS customer_phone,
+  c.city AS city,
+  c.school_type_id::int AS school_type_id,
+  st.name AS school_type_name,
+  c.school_stage_id::int AS school_stage_id,
+  sg.name AS school_stage_name,
   c.sale_status,
   c.payment_status,
   c.sale_price,
@@ -81,6 +87,10 @@ const FROM_CLAUSE = `
     ON l.customer_id = c.id
   LEFT JOIN products p
     ON p.product_id = l.product_id
+  LEFT JOIN school_types st
+    ON st.id = c.school_type_id
+  LEFT JOIN school_stages sg
+    ON sg.id = c.school_stage_id
 `;
 
 // A row needs attention when it has no customer, no name, or no recorded price.
@@ -157,6 +167,23 @@ function buildWhere(filters = {}) {
     }
   }
 
+  // --- school profile (all optional) --------------------------------------------
+  if (filters.city !== undefined && filters.city !== null && filters.city !== '') {
+    if (typeof filters.city !== 'string' || filters.city.length > 100) throw new ValidationError('المدينة غير صالحة.');
+    clauses.push(`c.city ILIKE ${push(`%${escapeLike(filters.city.normalize('NFC').trim())}%`)} ESCAPE '\\'`);
+  }
+
+  for (const [key, column, label] of [
+    ['schoolTypeId', 'c.school_type_id', 'نوع المدرسة'],
+    ['schoolStageId', 'c.school_stage_id', 'المرحلة الدراسية'],
+  ]) {
+    const v = filters[key];
+    if (v === undefined || v === null || v === '') continue;
+    if (String(v).toLowerCase() === 'none') clauses.push(`${column} IS NULL`);
+    else if (/^\d{1,15}$/.test(String(v))) clauses.push(`${column} = ${push(Number(v))}`);
+    else throw new ValidationError(`${label} غير صالح.`);
+  }
+
   // --- activation state ------------------------------------------------------
   if (filters.activation) {
     const v = String(filters.activation).toLowerCase();
@@ -208,6 +235,7 @@ function buildWhere(filters = {}) {
       `l.license_key ILIKE ${like} ESCAPE '\\'`,
       `c.email ILIKE ${like} ESCAPE '\\'`,
       `p.name ILIKE ${like} ESCAPE '\\'`,
+      `c.city ILIKE ${like} ESCAPE '\\'`,
     ];
 
     const numeric = q.replace(/^#/, '');

@@ -63,6 +63,7 @@ async function migrate(mode) {
     const result = await runMigration(client, readSql('customerManagement'), { mode });
     // 007 (sale status) builds on 004; the app code requires both.
     if (mode === 'apply') await runMigration(client, readSql('saleStatus'), { mode });
+    if (mode === 'apply') await runMigration(client, readSql('schoolProfile'), { mode });
     return result;
   } finally {
     client.release();

@@ -62,6 +62,10 @@ function parseNotes(value) {
   return cleanText(value, { field: 'الملاحظات', max: 2000, multiline: true });
 }
 
+function parseCity(value) {
+  return cleanText(value, { field: 'المدينة', max: 100 });
+}
+
 function parsePhone(value) {
   const phone = cleanText(value, { field: 'رقم الهاتف', max: 40 });
 
@@ -243,6 +247,7 @@ module.exports = {
   parseNotes,
   parseEmail,
   parsePhone,
+  parseCity,
   parseSaleStatus,
   parsePaymentStatus,
   SALE_STATUSES,

@@ -175,6 +175,8 @@ function currentFilters() {
     saleStatus: $('saleStatusFilter').value,
     paymentStatus: $('paymentStatusFilter').value,
     activation: $('activationFilter').value,
+    schoolTypeId: $('schoolTypeFilter').value,
+    schoolStageId: $('schoolStageFilter').value,
     incomplete: $('incompleteFilter').checked ? '1' : '',
     sort: state.sort,
     dir: state.dir,
@@ -205,7 +207,7 @@ function renderRows() {
   const body = $('licensesTableBody');
 
   if (!state.rows.length) {
-    body.innerHTML = '<tr><td colspan="15">لا توجد نتائج.</td></tr>';
+    body.innerHTML = '<tr><td colspan="18">لا توجد نتائج.</td></tr>';
     return;
   }
 
@@ -254,6 +256,9 @@ function renderRows() {
         <td><input type="checkbox" data-select="${escapeHtml(key)}" ${state.selected.has(key) ? 'checked' : ''} aria-label="تحديد"></td>
         <td>${numberCell}</td>
         <td>${nameCell}</td>
+        <td>${hasCustomer ? escapeHtml(row.city || '—') : '—'}</td>
+        <td>${hasCustomer ? escapeHtml(row.school_type_name || '—') : '—'}</td>
+        <td>${hasCustomer ? escapeHtml(row.school_stage_name || '—') : '—'}</td>
         <td>${keyCell}</td>
         <td>${hasLicense ? `<bdi title="${escapeHtml(row.product_id)}">${escapeHtml(row.product_name || row.product_id)}</bdi>` : '—'}</td>
         <td>${statusBadge(row.status)}</td>
@@ -420,6 +425,9 @@ function setCustomerForm(c) {
   $('cName').value = c.name || '';
   $('cEmail').value = c.email || '';
   $('cPhone').value = c.phone || '';
+  $('cCity').value = c.city || '';
+  setSchoolSelect('cSchoolType', state.schoolTypes, c.school_type_id, c.school_type_name);
+  setSchoolSelect('cSchoolStage', state.schoolStages, c.school_stage_id, c.school_stage_name);
   $('cSaleStatus').value = c.sale_status || 'sold';
   $('cPaymentStatus').value = c.payment_status || '';
   $('cPrice').value = c.sale_price === null || c.sale_price === undefined ? '' : c.sale_price;
@@ -483,6 +491,9 @@ function customerPayload() {
     name: $('cName').value.trim(),
     email: $('cEmail').value.trim() || null,
     phone: $('cPhone').value.trim() || null,
+    city: $('cCity').value.trim() || null,
+    schoolTypeId: $('cSchoolType').value ? Number($('cSchoolType').value) : null,
+    schoolStageId: $('cSchoolStage').value ? Number($('cSchoolStage').value) : null,
     saleStatus: $('cSaleStatus').value,
     paymentStatus: $('cPaymentStatus').value || null,
     salePrice: $('cPrice').value.trim() || null,
@@ -756,7 +767,7 @@ $('searchInput').addEventListener('input', () => {
   clearTimeout(searchTimer);
   searchTimer = setTimeout(reloadFromFirstPage, 300);
 });
-['statusFilter', 'productFilter', 'archivedFilter', 'incompleteFilter', 'saleStatusFilter', 'paymentStatusFilter', 'activationFilter'].forEach((id) =>
+['statusFilter', 'productFilter', 'archivedFilter', 'incompleteFilter', 'saleStatusFilter', 'paymentStatusFilter', 'activationFilter', 'schoolTypeFilter', 'schoolStageFilter'].forEach((id) =>
   $(id).addEventListener('change', reloadFromFirstPage));
 
 $('pageSize').addEventListener('change', () => {
@@ -916,11 +927,15 @@ async function loadProducts() {
 
 function showTab(name) {
   const products = name === 'products';
-  $('licensesPanel').classList.toggle('hidden', products);
+  const options = name === 'options';
+  $('licensesPanel').classList.toggle('hidden', products || options);
   $('productsPanel').classList.toggle('hidden', !products);
-  $('tabLicenses').classList.toggle('active', !products);
+  $('schoolOptionsPanel').classList.toggle('hidden', !options);
+  $('tabLicenses').classList.toggle('active', !products && !options);
   $('tabProducts').classList.toggle('active', products);
+  $('tabSchoolOptions').classList.toggle('active', options);
   if (products) loadProducts();
+  if (options) loadSchoolOptions();
 }
 
 function openProductModal(product) {
@@ -969,6 +984,7 @@ async function toggleProduct(product) {
 
 $('tabLicenses').addEventListener('click', () => showTab('licenses'));
 $('tabProducts').addEventListener('click', () => showTab('products'));
+$('tabSchoolOptions').addEventListener('click', () => showTab('options'));
 $('addProductBtn').addEventListener('click', () => openProductModal(null));
 $('productForm').addEventListener('submit', async (event) => { event.preventDefault(); await saveProduct(); });
 $('productsTableBody').addEventListener('click', (event) => {
@@ -981,8 +997,243 @@ $('productsTableBody').addEventListener('click', (event) => {
 });
 
 
+/* ------------------------------------------------- school types / stages */
+
+state.schoolTypes = [];
+state.schoolStages = [];
+
+const OPTION_KINDS = {
+  'school-types': { listKey: 'schoolTypes', body: 'schoolTypesBody', msg: 'schoolTypesMessage', label: 'نوع المدرسة' },
+  'school-stages': { listKey: 'schoolStages', body: 'schoolStagesBody', msg: 'schoolStagesMessage', label: 'المرحلة الدراسية' },
+};
+
+// Fill a record-form select with the ACTIVE options. An option the record already has stays
+// selectable even if it was deactivated later, so opening and saving an old record never drops it.
+function setSchoolSelect(id, options, selectedId, selectedName) {
+  const wanted = selectedId === null || selectedId === undefined ? '' : String(selectedId);
+  let html = '<option value="">— بدون —</option>';
+  const active = (options || []).filter((o) => o.is_active);
+  html += active.map((o) => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.name)}</option>`).join('');
+  if (wanted && !active.some((o) => String(o.id) === wanted)) {
+    html += `<option value="${escapeHtml(wanted)}">${escapeHtml(selectedName || wanted)} (معطّل)</option>`;
+  }
+  $(id).innerHTML = html;
+  $(id).value = wanted;
+}
+
+function fillSchoolFilters() {
+  const keepT = $('schoolTypeFilter').value;
+  const keepS = $('schoolStageFilter').value;
+  const opt = (o) => `<option value="${escapeHtml(o.id)}">${escapeHtml(o.name)}${o.is_active ? '' : ' (معطّل)'}</option>`;
+  $('schoolTypeFilter').innerHTML = `<option value="">نوع المدرسة: الكل</option><option value="none">بدون نوع</option>${state.schoolTypes.map(opt).join('')}`;
+  $('schoolStageFilter').innerHTML = `<option value="">المرحلة: الكل</option><option value="none">بدون مرحلة</option>${state.schoolStages.map(opt).join('')}`;
+  $('schoolTypeFilter').value = keepT;
+  $('schoolStageFilter').value = keepS;
+}
+
+function renderSchoolOptions(path) {
+  const kind = OPTION_KINDS[path];
+  const list = state[kind.listKey];
+  $(kind.body).innerHTML = list.map((o) => `
+    <tr>
+      <td><bdi>${escapeHtml(o.name)}</bdi></td>
+      <td>${o.is_active ? '<span class="badge active">فعّال</span>' : '<span class="badge inactive">معطّل</span>'}</td>
+      <td class="num">${o.usage_count > 0 ? `<span class="badge warn">مستخدم في ${escapeHtml(o.usage_count)}</span>` : 'غير مستخدم'}</td>
+      <td><div class="actions">
+        <button class="secondary" type="button" data-oaction="rename" data-okind="${path}" data-oid="${escapeHtml(o.id)}">تعديل الاسم</button>
+        <button class="${o.is_active ? 'secondary' : 'success'}" type="button" data-oaction="toggle" data-okind="${path}" data-oid="${escapeHtml(o.id)}">${o.is_active ? 'تعطيل' : 'تفعيل'}</button>
+        <button class="danger" type="button" data-oaction="delete" data-okind="${path}" data-oid="${escapeHtml(o.id)}"${o.usage_count > 0 ? ' title="مستخدم في سجلات: لا يمكن حذفه"' : ''}>حذف</button>
+      </div></td>
+    </tr>`).join('') || '<tr><td colspan="4">لا توجد خيارات.</td></tr>';
+}
+
+async function loadSchoolOptions() {
+  try {
+    const data = await api('/school-options');
+    state.schoolTypes = data.schoolTypes;
+    state.schoolStages = data.schoolStages;
+    renderSchoolOptions('school-types');
+    renderSchoolOptions('school-stages');
+    fillSchoolFilters();
+    setSchoolSelect('cSchoolType', state.schoolTypes, $('cSchoolType').value, '');
+    setSchoolSelect('cSchoolStage', state.schoolStages, $('cSchoolStage').value, '');
+    message('schoolTypesMessage');
+    message('schoolStagesMessage');
+  } catch (error) {
+    message('schoolTypesMessage', error.message, 'error');
+  }
+}
+
+async function optionRequest(path, id, method, body, kind) {
+  const url = `/${path}${id === null ? '' : `/${id}`}`;
+  return api(url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+}
+
+async function renameOption(path, option) {
+  const kind = OPTION_KINDS[path];
+  const next = window.prompt(`الاسم الجديد لـ«${option.name}»:`, option.name);
+  if (next === null || next.trim() === option.name) return;
+  try {
+    let confirm = false;
+    if (option.usage_count > 0) {
+      if (!window.confirm(`«${option.name}» مستخدم في ${option.usage_count} سجل. تغيير اسمه إلى «${next.trim()}» سيظهر في كل هذه السجلات. متابعة؟`)) return;
+      confirm = true;
+    }
+    await optionRequest(path, option.id, 'PATCH', { name: next, confirm }, kind);
+    toast('تم تعديل الاسم.', 'success');
+    await loadSchoolOptions();
+  } catch (error) {
+    message(kind.msg, error.message, 'error');
+  }
+}
+
+async function toggleOption(path, option) {
+  const kind = OPTION_KINDS[path];
+  const text = option.is_active
+    ? `تعطيل «${option.name}»؟ لن يظهر في الاختيارات الجديدة${option.usage_count ? `، وتبقى السجلات الـ${option.usage_count} المرتبطة به كما هي` : ''}.`
+    : `إعادة تفعيل «${option.name}»؟`;
+  if (!window.confirm(text)) return;
+  try {
+    await optionRequest(path, option.id, 'PATCH', { isActive: !option.is_active }, kind);
+    await loadSchoolOptions();
+  } catch (error) {
+    message(kind.msg, error.message, 'error');
+  }
+}
+
+async function deleteOption(path, option) {
+  const kind = OPTION_KINDS[path];
+  if (option.usage_count > 0) {
+    message(kind.msg, `لا يمكن حذف «${option.name}» لأنه مستخدم في ${option.usage_count} سجل. عطّله بدل حذفه.`, 'error');
+    return;
+  }
+  if (!window.confirm(`حذف «${option.name}» نهائيًا؟`)) return;
+  try {
+    await optionRequest(path, option.id, 'DELETE', undefined, kind);
+    toast('تم الحذف.', 'success');
+    await loadSchoolOptions();
+  } catch (error) {
+    message(kind.msg, error.message, 'error');
+  }
+}
+
+document.querySelectorAll('[data-option-form]').forEach((form) =>
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const path = form.dataset.optionForm;
+    const kind = OPTION_KINDS[path];
+    const input = form.querySelector('input');
+    try {
+      await optionRequest(path, null, 'POST', { name: input.value }, kind);
+      input.value = '';
+      toast('تمت الإضافة.', 'success');
+      await loadSchoolOptions();
+    } catch (error) {
+      message(kind.msg, error.message, 'error');
+    }
+  }));
+
+document.getElementById('schoolOptionsPanel').addEventListener('click', async (event) => {
+  const b = event.target.closest('button[data-oaction]');
+  if (!b) return;
+  const path = b.dataset.okind;
+  const option = state[OPTION_KINDS[path].listKey].find((o) => String(o.id) === b.dataset.oid);
+  if (!option) return;
+  if (b.dataset.oaction === 'rename') await renameOption(path, option);
+  else if (b.dataset.oaction === 'toggle') await toggleOption(path, option);
+  else await deleteOption(path, option);
+});
+
+/* ------------------------------------------------------------- excel import */
+
+async function downloadTemplate(prefill) {
+  try {
+    const response = await fetch(`/api/v1/admin/records/import-template${prefill ? `?prefill=${prefill}` : ''}`, {
+      headers: { Authorization: `Bearer ${state.token}` },
+    });
+    if (response.status === 401) { logout(); throw new Error('انتهت جلسة الإدارة.'); }
+    if (!response.ok) throw new Error(`فشل تنزيل القالب (${response.status}).`);
+    const blob = await response.blob();
+    const match = /filename="([^"]+)"/.exec(response.headers.get('Content-Disposition') || '');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = match ? match[1] : 'import-template.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  } catch (error) {
+    toast(error.message, 'error');
+  }
+}
+
+async function runImport(dryRun) {
+  const file = $('importFile').files[0];
+  if (!file) { message('importMessage', 'اختر ملف Excel أولًا.', 'error'); return; }
+  message('importMessage', dryRun ? 'جارٍ فحص الملف...' : 'جارٍ الاستيراد...', 'info');
+  $('importErrorsBox').classList.add('hidden');
+  $('importApplyBtn').disabled = true;
+  $('importPreviewBtn').disabled = true;
+  try {
+    const params = new URLSearchParams();
+    if (dryRun) params.set('dryRun', '1');
+    if ($('importClearEmpty').checked) params.set('clearEmpty', '1');
+    const response = await fetch(`/api/v1/admin/records/import?${params.toString()}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${state.token}`, 'Content-Type': 'application/octet-stream' },
+      body: await file.arrayBuffer(),
+    });
+    if (response.status === 401) { logout(); throw new Error('انتهت جلسة الإدارة.'); }
+    let data;
+    try { data = await response.json(); } catch (_e) { throw new Error('استجابة غير صالحة من الخادم.'); }
+
+    const ignored = data.ignoredColumns && data.ignoredColumns.length
+      ? ` — أعمدة لم تُستخدم: ${data.ignoredColumns.join('، ')}` : '';
+
+    if (!response.ok) {
+      const errs = data.errors || [];
+      if (errs.length) {
+        $('importErrorsBody').innerHTML = errs.map((e) =>
+          `<tr><td class="num">${escapeHtml(e.row)}</td><td>${escapeHtml(e.column || '—')}</td><td>${escapeHtml(e.message)}</td></tr>`).join('');
+        $('importErrorsBox').classList.remove('hidden');
+      }
+      message('importMessage', `${data.message || 'فشل الاستيراد.'}${ignored}`, 'error');
+      return;
+    }
+
+    const s = data.summary;
+    message('importMessage',
+      `${dryRun ? 'الفحص ناجح (لم يُحفظ شيء)' : 'تم الاستيراد'}: ${s.updated} سجل ${dryRun ? 'سيُحدَّث' : 'حُدِّث'}، ${s.unchanged} بلا تغيير، ${s.blankRows} صف فارغ${ignored}.`,
+      'success');
+    if (!dryRun) { await loadRecords(); toast('تم استيراد البيانات.', 'success'); }
+  } catch (error) {
+    message('importMessage', error.message, 'error');
+  } finally {
+    $('importApplyBtn').disabled = false;
+    $('importPreviewBtn').disabled = false;
+  }
+}
+
+$('importTemplateBtn').addEventListener('click', () => downloadTemplate(''));
+$('importTemplateUnsoldBtn').addEventListener('click', () => downloadTemplate('incomplete'));
+$('importBtn').addEventListener('click', () => { $('importFile').value = ''; $('importFile').click(); });
+$('importFile').addEventListener('change', () => {
+  const file = $('importFile').files[0];
+  if (!file) return;
+  message('importMessage');
+  $('importErrorsBox').classList.add('hidden');
+  $('importFileName').textContent = file.name;
+  openModal('importModal');
+});
+$('importPreviewBtn').addEventListener('click', () => runImport(true));
+$('importApplyBtn').addEventListener('click', () => {
+  if (window.confirm('سيتم حفظ بيانات الملف في السجلات المطابقة. متابعة؟')) runImport(false);
+});
+
 if (state.token) {
   showDashboard();
+  loadSchoolOptions();
   loadProducts();
   loadRecords().catch(() => logout());
 } else {

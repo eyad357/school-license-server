@@ -86,6 +86,7 @@ const MIGRATIONS = {
   productsPlatform: 'src/db/005_products_platform.sql',
   eventsAudit: 'src/db/006_events_audit.sql',
   saleStatus: 'src/db/007_sale_status.sql',
+  schoolProfile: 'src/db/008_school_profile.sql',
 };
 
 function readSql(key) {
@@ -112,6 +113,7 @@ async function resetDatabase(stage = 'full') {
       await pool.query(readSql('productsPlatform'));
       await pool.query(readSql('eventsAudit'));
       await pool.query(readSql('saleStatus'));
+      await pool.query(readSql('schoolProfile'));
       await pool.query('COMMIT');
     } catch (error) {
       await pool.query('ROLLBACK');

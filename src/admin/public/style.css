@@ -517,3 +517,10 @@ tr.is-archived td { opacity: .55; }
   .licenses-table { font-size: 12px; }
   .licenses-table .actions button { padding: 4px 6px; font-size: 11px; }
 }
+
+/* School options management + Excel import */
+.inline-form { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+.inline-form input { flex: 1; min-width: 0; }
+.options-grid { align-items: start; padding: 0; }
+.opt-name-input { width: 100%; }
+.badge.warn { background: #fff4d6; color: #7a5200; }

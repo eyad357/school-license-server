@@ -31,6 +31,9 @@ const {
   updateProduct,
 } = require('../services/productService');
 
+const { schoolTypes, schoolStages } = require('../services/schoolOptionsService');
+const { importRecords, buildTemplate, MAX_FILE_BYTES } = require('../services/recordImportService');
+
 const router = express.Router();
 
 // index.js skips its 50kb parser for these two paths; they parse up to 1mb here,
@@ -125,6 +128,104 @@ router.patch(
     const product = await updateProduct(req.params.productId, req.body || {});
     await audit.record(null, { ...audit.fromReq(req), action: 'product.update', targetType: 'product', targetId: req.params.productId, meta: { fields: Object.keys(req.body || {}) } });
     res.json({ status: 'ok', product });
+  })
+);
+
+// ---------------------------------------------------------------------------
+// School profile option lists: school types and school stages (two SEPARATE lists).
+// Every route requires an admin token; the UI hiding buttons is not the protection.
+//   GET    /school-options               both lists (admin view, includes inactive + usage)
+//   GET    /school-types | /school-stages
+//   POST   /school-types | /school-stages            { name }
+//   PATCH  /school-types/:id | /school-stages/:id    { name?, isActive?, confirm? }
+//   DELETE /school-types/:id | /school-stages/:id
+// ---------------------------------------------------------------------------
+router.get(
+  '/school-options',
+  requireAdmin,
+  handle('List school options', async (_req, res) => {
+    const [types, stages] = await Promise.all([schoolTypes.list(), schoolStages.list()]);
+    res.set('Cache-Control', 'no-store');
+    res.json({ status: 'ok', schoolTypes: types, schoolStages: stages });
+  })
+);
+
+for (const [path, svc, key, targetType] of [
+  ['school-types', schoolTypes, 'schoolType', 'school_type'],
+  ['school-stages', schoolStages, 'schoolStage', 'school_stage'],
+]) {
+  router.get(`/${path}`, requireAdmin, handle(`List ${path}`, async (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ status: 'ok', items: await svc.list() });
+  }));
+
+  router.post(`/${path}`, requireAdmin, handle(`Create ${path}`, async (req, res) => {
+    const item = await svc.create(req.body || {});
+    await audit.record(null, { ...audit.fromReq(req), action: `${targetType}.create`, targetType, targetId: item.id, meta: { name: item.name } });
+    res.status(201).json({ status: 'created', [key]: item });
+  }));
+
+  router.patch(`/${path}/:id`, requireAdmin, handle(`Update ${path}`, async (req, res) => {
+    const before = await svc.get(req.params.id);
+    const item = await svc.update(req.params.id, req.body || {});
+    await audit.record(null, { ...audit.fromReq(req), action: `${targetType}.update`, targetType, targetId: item.id,
+      meta: { from: before.name, to: item.name, isActive: item.is_active, usage: item.usage_count } });
+    res.json({ status: 'ok', [key]: item });
+  }));
+
+  router.delete(`/${path}/:id`, requireAdmin, handle(`Delete ${path}`, async (req, res) => {
+    const removed = await svc.remove(req.params.id);
+    await audit.record(null, { ...audit.fromReq(req), action: `${targetType}.delete`, targetType, targetId: removed.id, meta: { name: removed.name } });
+    res.json({ status: 'deleted', [key]: removed });
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Excel import (updates existing records) and its template
+// ---------------------------------------------------------------------------
+router.get(
+  '/records/import-template',
+  requireAdmin,
+  handle('Import template', async (req, res) => {
+    const prefill = ['unsold', 'incomplete'].includes(req.query.prefill) ? req.query.prefill : 'none';
+    const file = await buildTemplate({ prefill, productId: req.query.productId || undefined });
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${exportFilename('xlsx', 'import-template')}"`,
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    res.send(file);
+  })
+);
+
+// Raw .xlsx bytes in the body (Content-Type: application/octet-stream or the xlsx type),
+// parsed only AFTER the admin token has been verified. ?dryRun=1 validates without saving,
+// ?clearEmpty=1 makes empty cells clear the stored value (default: empty cells change nothing).
+router.post(
+  '/records/import',
+  requireAdmin,
+  express.raw({ type: () => true, limit: MAX_FILE_BYTES + 1024 }),
+  handle('Import records', async (req, res) => {
+    const flag = (v) => ['1', 'true', 'yes'].includes(String(v || '').toLowerCase());
+    const dryRun = flag(req.query.dryRun);
+    const result = await importRecords(Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), {
+      dryRun,
+      clearEmpty: flag(req.query.clearEmpty),
+      createdBy: req.admin && req.admin.username,
+    });
+    const { ok, ...payload } = result;
+
+    if (ok && !dryRun) {
+      await audit.record(null, { ...audit.fromReq(req), action: 'records.import', targetType: 'import', meta: {
+        rows: payload.summary.rows, updated: payload.summary.updated, unchanged: payload.summary.unchanged } });
+    }
+
+    res.set('Cache-Control', 'no-store');
+    if (!ok) {
+      return res.status(422).json({ status: 'invalid', message: 'يوجد أخطاء في الملف. لم يتم حفظ أي بيانات.', ...payload });
+    }
+    return res.json({ status: dryRun ? 'preview' : 'imported', ...payload });
   })
 );
 

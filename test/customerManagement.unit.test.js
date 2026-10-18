@@ -62,7 +62,10 @@ test('CSV output: BOM, CRLF, quoted text, exact money, empty cells, labels', () 
   for (const removed of ['L-1', 'مباع', 'جزئي', 'فعال']) assert.ok(!line.includes(removed), `removed column leaked: ${removed}`);
   assert.ok(!line.includes('2026-01-02'), 'license creation date is no longer exported');
   assert.equal(text.split('\r\n')[0].split('","').length, COLUMNS.length);
-  assert.equal(COLUMNS.length, 14);
+  // 14 original columns (unchanged, same order) + 3 school-profile columns appended at the end.
+  assert.equal(COLUMNS.length, 17);
+  assert.deepEqual(COLUMNS.slice(0, 14).map((c) => c.header), ['رقم العميل', 'اسم العميل', 'الهاتف', 'البرنامج', 'مفتاح التفعيل', 'نوع الترخيص', 'تاريخ الانتهاء', 'السعر الفعلي', 'العملة', 'تاريخ البيع', 'حالة التفعيل', 'الحد الأقصى للأجهزة', 'عدد الأجهزة المستخدمة', 'الملاحظات']);
+  assert.deepEqual(COLUMNS.slice(14).map((c) => c.header), ['المدينة', 'نوع المدرسة', 'المرحلة الدراسية']);
   const removedHeaders = ['البريد الإلكتروني', 'مرجع الترخيص', 'معرّف البرنامج', 'الخطة', 'حالة الدفع', 'حالة البيع', 'أول تفعيل (UTC)', 'تاريخ إنشاء الترخيص', 'حالة الترخيص'];
   for (const h of removedHeaders) assert.ok(!COLUMNS.some((c) => c.header === h), `column still exported: ${h}`);
 });

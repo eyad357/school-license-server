@@ -27,6 +27,10 @@ const COLUMNS = Object.freeze([
   { key: 'max_devices', header: 'الحد الأقصى للأجهزة', kind: 'int', width: 20 },
   { key: 'active_devices', header: 'عدد الأجهزة المستخدمة', kind: 'int', width: 22 },
   { key: 'notes', header: 'الملاحظات', kind: 'text', width: 40 },
+  // School profile (migration 008). Appended AFTER the original columns so the old layout is unchanged.
+  { key: 'city', header: 'المدينة', kind: 'text', width: 18 },
+  { key: 'school_type_name', header: 'نوع المدرسة', kind: 'text', width: 18 },
+  { key: 'school_stage_name', header: 'المرحلة الدراسية', kind: 'text', width: 20 },
 ]);
 
 const VALUE_LABELS = Object.freeze({

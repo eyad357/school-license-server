@@ -9,12 +9,14 @@
 // activate / validate / deactivate code paths.
 
 const pool = require('../db/pool');
+const { schoolTypes, schoolStages } = require('./schoolOptionsService');
 const { NotFoundError, ConflictError } = require('../lib/errors');
 const {
   ValidationError,
   parseName,
   parseEmail,
   parsePhone,
+  parseCity,
   parseSaleStatus,
   parsePaymentStatus,
   parseSale,
@@ -31,6 +33,11 @@ const CUSTOMER_COLUMNS = `
   name,
   email,
   phone,
+  city,
+  school_type_id::int AS school_type_id,
+  school_stage_id::int AS school_stage_id,
+  (SELECT t.name FROM school_types t WHERE t.id = customers.school_type_id) AS school_type_name,
+  (SELECT g.name FROM school_stages g WHERE g.id = customers.school_stage_id) AS school_stage_name,
   sale_status,
   payment_status,
   sale_price,
@@ -124,7 +131,7 @@ async function getCustomerDetails(ref, db = pool) {
 
 const PATCHABLE = [
   'name', 'email', 'phone', 'salePrice', 'currency', 'soldAt', 'notes',
-  'saleStatus', 'paymentStatus',
+  'saleStatus', 'paymentStatus', 'city', 'schoolTypeId', 'schoolStageId',
 ];
 
 /**
@@ -143,13 +150,21 @@ async function updateCustomer(ref, patch = {}, db = pool) {
     throw new ValidationError('لا توجد بيانات للتعديل.');
   }
 
-  return withTransaction(db, async (client) => {
+  return withTransaction(db, (client) => updateCustomerOn(client, ref, patch));
+}
+
+/** Same as updateCustomer but inside a transaction the caller already owns (Excel import). */
+async function updateCustomerOn(client, ref, patch) {
+  {
     const current = await resolveCustomerRow(client, ref, { lock: true });
 
     const next = {
       name: current.name,
       email: current.email,
       phone: current.phone,
+      city: current.city,
+      schoolTypeId: current.school_type_id,
+      schoolStageId: current.school_stage_id,
       saleStatus: current.sale_status,
       paymentStatus: current.payment_status,
       salePrice: current.sale_price,
@@ -174,6 +189,20 @@ async function updateCustomer(ref, patch = {}, db = pool) {
 
     if (patch.phone !== undefined) {
       next.phone = parsePhone(patch.phone);
+    }
+
+    if (patch.city !== undefined) {
+      next.city = parseCity(patch.city);
+    }
+
+    // Optional lists: undefined = leave as is, null/'' = clear, id = must be an ACTIVE option
+    // (an inactive option the record already has may be kept unchanged).
+    if (patch.schoolTypeId !== undefined) {
+      next.schoolTypeId = await schoolTypes.resolveId(patch.schoolTypeId, client, { allowId: current.school_type_id });
+    }
+
+    if (patch.schoolStageId !== undefined) {
+      next.schoolStageId = await schoolStages.resolveId(patch.schoolStageId, client, { allowId: current.school_stage_id });
     }
 
     if (patch.salePrice !== undefined) {
@@ -227,6 +256,9 @@ async function updateCustomer(ref, patch = {}, db = pool) {
           phone = $8,
           sale_status = $9,
           payment_status = $10,
+          city = $11,
+          school_type_id = $12,
+          school_stage_id = $13,
           updated_at = NOW()
       WHERE id = $1
       RETURNING ${CUSTOMER_COLUMNS}
@@ -242,11 +274,14 @@ async function updateCustomer(ref, patch = {}, db = pool) {
         next.phone,
         next.saleStatus,
         next.paymentStatus,
+        next.city,
+        next.schoolTypeId,
+        next.schoolStageId,
       ]
     );
 
     return result.rows[0];
-  });
+  }
 }
 
 async function setArchived(ref, archived, db = pool) {
@@ -306,16 +341,19 @@ async function assignCustomerToLicense(licenseId, input = {}, db = pool) {
       const name = parseName(input.name, { required: true });
       const email = parseEmail(input.email);
       const sale = parseSale(input);
+      const city = parseCity(input.city);
+      const schoolTypeId = (await schoolTypes.resolveId(input.schoolTypeId, client)) ?? null;
+      const schoolStageId = (await schoolStages.resolveId(input.schoolStageId, client)) ?? null;
 
       const created = await client.query(
         `
         INSERT INTO customers (name, email, phone, sale_price, currency, sold_at, notes,
-                               sale_status, payment_status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'sold', $8)
+                               sale_status, payment_status, city, school_type_id, school_stage_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'sold', $8, $9, $10, $11)
         RETURNING ${CUSTOMER_COLUMNS}
         `,
         [name, email, parsePhone(input.phone), sale.salePrice, sale.currency, sale.soldAt,
-          sale.notes, parsePaymentStatus(input.paymentStatus)]
+          sale.notes, parsePaymentStatus(input.paymentStatus), city, schoolTypeId, schoolStageId]
       );
 
       customer = created.rows[0];
@@ -335,6 +373,7 @@ module.exports = {
   withTransaction,
   getCustomerDetails,
   updateCustomer,
+  updateCustomerOn,
   archiveCustomer,
   unarchiveCustomer,
   assignCustomerToLicense,

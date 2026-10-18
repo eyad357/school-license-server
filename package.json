@@ -14,6 +14,8 @@
     "migrate:apply:005": "node scripts/migrate.js --apply src/db/005_products_platform.sql",
     "migrate:plan:006": "node scripts/migrate.js --plan src/db/006_events_audit.sql",
     "migrate:apply:006": "node scripts/migrate.js --apply src/db/006_events_audit.sql",
+    "migrate:plan:008": "node scripts/migrate.js --plan src/db/008_school_profile.sql",
+    "migrate:apply:008": "node scripts/migrate.js --apply src/db/008_school_profile.sql",
     "signing:keygen": "node scripts/generate-signing-key.js ./signing-keys"
   },
   "keywords": [],

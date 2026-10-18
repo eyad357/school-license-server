@@ -44,6 +44,7 @@
     <nav class="tabs" role="tablist">
       <button type="button" id="tabLicenses" class="seg active">التراخيص</button>
       <button type="button" id="tabProducts" class="seg">البرامج</button>
+      <button type="button" id="tabSchoolOptions" class="seg">قوائم المدرسة</button>
     </nav>
 
     <main class="container">
@@ -128,6 +129,14 @@
           <option value="not_activated">غير مفعّل</option>
         </select>
 
+        <select id="schoolTypeFilter" aria-label="نوع المدرسة">
+          <option value="">نوع المدرسة: الكل</option>
+        </select>
+
+        <select id="schoolStageFilter" aria-label="المرحلة الدراسية">
+          <option value="">المرحلة: الكل</option>
+        </select>
+
         <label class="check">
           <input id="incompleteFilter" type="checkbox">
           مباعة وبياناتها ناقصة
@@ -144,6 +153,10 @@
         </select>
         <button id="exportXlsxBtn" class="secondary" type="button">Excel</button>
         <button id="exportCsvBtn" class="secondary" type="button">CSV</button>
+        <button id="importTemplateBtn" class="secondary" type="button" title="قالب Excel فارغ بقوائم منسدلة">قالب الاستيراد</button>
+        <button id="importTemplateUnsoldBtn" class="secondary" type="button" title="قالب معبّأ بأرقام ومفاتيح السجلات التي ينقصها بيانات المدرسة">قالب (سجلات ناقصة)</button>
+        <button id="importBtn" class="secondary" type="button">استيراد Excel</button>
+        <input id="importFile" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden">
       </div>
 
       <!-- Records table -->
@@ -157,6 +170,9 @@
                 <th class="narrow"><input id="selectAll" type="checkbox" aria-label="تحديد الكل"></th>
                 <th class="sortable" data-sort="customer_number">رقم العميل</th>
                 <th class="sortable" data-sort="customer_name">اسم العميل</th>
+                <th class="sortable" data-sort="city">المدينة</th>
+                <th>نوع المدرسة</th>
+                <th>المرحلة الدراسية</th>
                 <th class="sortable" data-sort="license_key">مفتاح التفعيل</th>
                 <th>البرنامج</th>
                 <th class="sortable" data-sort="status">حالة الترخيص</th>
@@ -222,8 +238,74 @@
        </div>
      </div>
 
+     <!-- School options (types and stages) -->
+     <div id="schoolOptionsPanel" class="hidden">
+       <div class="card toolbar">
+         <div>
+           <h2>قوائم بيانات المدرسة</h2>
+           <div class="muted">«نوع المدرسة» و«المرحلة الدراسية» قائمتان منفصلتان. التعديل يظهر فورًا في النماذج وقالب Excel. الخيار المستخدم لا يُحذف بل يُعطَّل.</div>
+         </div>
+       </div>
+       <div class="grid-2 options-grid">
+         <div class="card" id="schoolTypesCard">
+           <h3>أنواع المدارس</h3>
+           <form class="inline-form" data-option-form="school-types">
+             <input data-option-input="school-types" maxlength="100" placeholder="نوع جديد (مثال: حكومي)" aria-label="نوع مدرسة جديد">
+             <button type="submit">+ إضافة</button>
+           </form>
+           <div id="schoolTypesMessage" class="message"></div>
+           <div class="table-wrapper"><table>
+             <thead><tr><th>الاسم</th><th>الحالة</th><th>عدد السجلات</th><th>الإدارة</th></tr></thead>
+             <tbody id="schoolTypesBody"></tbody>
+           </table></div>
+         </div>
+         <div class="card" id="schoolStagesCard">
+           <h3>المراحل الدراسية</h3>
+           <form class="inline-form" data-option-form="school-stages">
+             <input data-option-input="school-stages" maxlength="100" placeholder="مرحلة جديدة (مثال: ابتدائي)" aria-label="مرحلة دراسية جديدة">
+             <button type="submit">+ إضافة</button>
+           </form>
+           <div id="schoolStagesMessage" class="message"></div>
+           <div class="table-wrapper"><table>
+             <thead><tr><th>الاسم</th><th>الحالة</th><th>عدد السجلات</th><th>الإدارة</th></tr></thead>
+             <tbody id="schoolStagesBody"></tbody>
+           </table></div>
+         </div>
+       </div>
+     </div>
+
     </main>
   </section>
+
+  <!-- Excel import -->
+  <div id="importModal" class="modal hidden">
+    <div class="modal-card large">
+      <div class="modal-header">
+        <div>
+          <h2>استيراد بيانات من Excel</h2>
+          <div id="importFileName" class="muted"></div>
+        </div>
+        <button class="icon-button" data-close="importModal">×</button>
+      </div>
+      <div class="muted small">
+        يحدّث السجلات الموجودة (بـ«رقم العميل» أو «مفتاح التفعيل») ولا ينشئ مفاتيح ولا يضيف خيارات جديدة للقوائم.
+        إذا وُجد أي خطأ فلن يُحفظ شيء.
+      </div>
+      <label class="check"><input id="importClearEmpty" type="checkbox"> اعتبار الخلايا الفارغة مسحًا للقيمة المحفوظة (افتراضيًا الخلية الفارغة لا تغيّر شيئًا)</label>
+      <div id="importMessage" class="message"></div>
+      <div id="importErrorsBox" class="hidden">
+        <div class="table-wrapper result-table"><table>
+          <thead><tr><th>الصف</th><th>العمود</th><th>المشكلة</th></tr></thead>
+          <tbody id="importErrorsBody"></tbody>
+        </table></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" data-close="importModal">إغلاق</button>
+        <button type="button" id="importPreviewBtn" class="secondary">فحص الملف بدون حفظ</button>
+        <button type="button" id="importApplyBtn">استيراد وحفظ</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Add / edit product -->
   <div id="productModal" class="modal hidden">
@@ -358,6 +440,18 @@
           <div>
             <label for="cPhone">الهاتف / وسيلة الاتصال</label>
             <input id="cPhone" maxlength="40" dir="ltr" inputmode="tel">
+          </div>
+          <div>
+            <label for="cCity">المدينة (اختياري)</label>
+            <input id="cCity" maxlength="100">
+          </div>
+          <div>
+            <label for="cSchoolType">نوع المدرسة (اختياري)</label>
+            <select id="cSchoolType"><option value="">— بدون —</option></select>
+          </div>
+          <div>
+            <label for="cSchoolStage">المرحلة الدراسية (اختياري)</label>
+            <select id="cSchoolStage"><option value="">— بدون —</option></select>
           </div>
           <div>
             <label for="cSaleStatus">حالة البيع</label>
