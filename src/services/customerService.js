@@ -11,6 +11,7 @@
 const pool = require('../db/pool');
 const { schoolTypes, schoolStages } = require('./schoolOptionsService');
 const { NotFoundError, ConflictError } = require('../lib/errors');
+const audit = require('./auditService');
 const {
   ValidationError,
   parseName,
@@ -369,8 +370,40 @@ async function assignCustomerToLicense(licenseId, input = {}, db = pool) {
   });
 }
 
+/**
+ * Permanently deletes customer records that have NO license attached.
+ * Customers that still own a license are never touched (reported as skipped).
+ * Customer numbers are NOT renumbered. One transaction; the audit write is strict.
+ */
+async function deleteCustomersWithoutLicense(customerIds, auditCtx = {}, db = pool) {
+  if (!Array.isArray(customerIds) || customerIds.length === 0) {
+    throw new ValidationError('لم يتم تحديد أي سجل للحذف.');
+  }
+  if (customerIds.length > 1000) throw new ValidationError('الحد الأقصى 1000 سجل في المرة الواحدة.');
+  if (!customerIds.every((id) => typeof id === 'string' && isUuid(id))) {
+    throw new ValidationError('معرّف عميل غير صالح.');
+  }
+  const ids = [...new Set(customerIds.map((id) => id.toLowerCase()))];
+
+  return withTransaction(db, async (client) => {
+    const del = await client.query(
+      `DELETE FROM customers c
+        WHERE c.id = ANY($1::uuid[])
+          AND NOT EXISTS (SELECT 1 FROM licenses l WHERE l.customer_id = c.id)
+        RETURNING c.id, c.customer_number::int AS n`,
+      [ids]
+    );
+    for (const row of del.rows) {
+      await audit.record(client, { ...auditCtx, action: 'customer.delete', targetType: 'customer', targetId: row.id,
+        meta: { customerNumber: row.n } }, { strict: true });
+    }
+    return { deleted: del.rowCount, skipped: ids.length - del.rowCount };
+  });
+}
+
 module.exports = {
   withTransaction,
+  deleteCustomersWithoutLicense,
   getCustomerDetails,
   updateCustomer,
   updateCustomerOn,

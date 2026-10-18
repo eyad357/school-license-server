@@ -15,6 +15,7 @@ const {
   archiveCustomer,
   unarchiveCustomer,
   assignCustomerToLicense,
+  deleteCustomersWithoutLicense,
 } = require('../services/customerService');
 const {
   listRecords,
@@ -273,6 +274,16 @@ router.post(
     await audit.record(null, { ...audit.fromReq(req), action: 'customer.unarchive', targetType: 'customer', targetId: req.params.ref, meta: {} });
 
     res.json({ status: 'ok', customer });
+  })
+);
+
+// Permanently delete customer records that have no license (never touches licenses).
+router.post(
+  '/records/delete-customers',
+  requireAdmin,
+  handle('Delete customers', async (req, res) => {
+    const result = await deleteCustomersWithoutLicense((req.body || {}).customerIds, audit.fromReq(req));
+    res.json({ status: 'deleted', ...result });
   })
 );
 

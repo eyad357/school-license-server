@@ -249,6 +249,11 @@ function renderRows() {
           ${toggle}
           <button class="danger" type="button" data-action="delete" data-key="${escapeHtml(key)}">حذف</button>
         </div>`;
+    } else if (hasCustomer) {
+      actions = `
+        <div class="actions">
+          <button class="danger" type="button" data-action="delete-customer" data-key="${escapeHtml(key)}">حذف</button>
+        </div>`;
     }
 
     return `
@@ -589,6 +594,31 @@ async function deleteLicense(row) {
   } catch (error) { toast(`فشل حذف الترخيص: ${error.message}`, 'error'); }
 }
 
+async function deleteCustomerRecords(rows) {
+  const targets = rows.filter((r) => r.customer_id && !r.license_id);
+  if (!targets.length) { toast('لا توجد سجلات بدون ترخيص ضمن التحديد.', 'error'); return; }
+  const sold = targets.filter((r) => r.sale_status === 'sold').length;
+  const msg = `تحذير!\n\nسيتم حذف ${targets.length} سجل (بدون ترخيص) نهائيًا.` +
+    (sold ? `\nمنها ${sold} سجل مباع.` : '') +
+    '\nلن تتأثر أي تراخيص، ولن يُعاد ترقيم العملاء.\nلا يمكن التراجع عن هذه العملية.\n\nهل أنت متأكد؟';
+  if (!confirm(msg)) return;
+  try {
+    const data = await api('/records/delete-customers', {
+      method: 'POST',
+      body: JSON.stringify({ customerIds: targets.map((r) => r.customer_id) }),
+    });
+    toast(`تم حذف ${data.deleted} سجل${data.skipped ? ` (تخطّي ${data.skipped})` : ''}.`, 'success');
+    state.selected.clear();
+    await loadRecords();
+  } catch (error) { toast(`فشل الحذف: ${error.message}`, 'error'); }
+}
+
+$('deleteSelectedBtn').addEventListener('click', () => {
+  const rows = [...state.selected].map(findRow).filter(Boolean);
+  if (!rows.length) { toast('حدّد سجلات أولًا.', 'error'); return; }
+  deleteCustomerRecords(rows);
+});
+
 function openEditLicense(row) {
   $('editLicenseId').value = row.license_id;
   $('editLicenseKey').textContent = row.license_key;
@@ -872,6 +902,7 @@ document.addEventListener('click', async (event) => {
   else if (action === 'revoke') await revokeLicense(row);
   else if (action === 'reactivate') await reactivateLicense(row);
   else if (action === 'delete') await deleteLicense(row);
+  else if (action === 'delete-customer') await deleteCustomerRecords([row]);
 });
 
 document.querySelectorAll('[data-close]').forEach((button) =>
