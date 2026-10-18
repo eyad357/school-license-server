@@ -14,7 +14,7 @@ beforeEach(async () => {
 });
 after(closeAll);
 
-test('deletes only license-less customers, keeps customers that own a license, no renumbering', async () => {
+test('deletes only license-less customers, keeps customers that own a license, renumbers 1..N', async () => {
   const b = await bulkWithSales({ productId: 'school-accreditation', quantity: 1, maxDevices: 1, duration: 'lifetime', plan: 'pro' });
   const withLicense = (await pool.query('SELECT customer_id FROM licenses LIMIT 1')).rows[0].customer_id;
   const a = (await pool.query("INSERT INTO customers (name) VALUES ('بدون ترخيص 1') RETURNING id")).rows[0].id;
@@ -31,7 +31,9 @@ test('deletes only license-less customers, keeps customers that own a license, n
   const left = (await pool.query('SELECT id, customer_number::int n FROM customers')).rows;
   assert.equal(left.length, 1);
   assert.equal(left[0].id, withLicense);
-  assert.equal(left[0].n, keep.n, 'numbers are not shifted');
+  assert.equal(left[0].n, 1, 'renumbered to 1..N');
+  assert.equal(r.json.renumbered, true);
+  assert.ok(keep);
   assert.equal((await pool.query('SELECT count(*)::int n FROM licenses')).rows[0].n, licBefore, 'licenses untouched');
   assert.equal((await pool.query("SELECT count(*)::int n FROM admin_audit_log WHERE action='customer.delete'")).rows[0].n, 2);
   assert.ok(b);
@@ -42,4 +44,15 @@ test('validation: empty list, bad id, too many', async () => {
   assert.equal((await admin('POST', '/records/delete-customers', { body: { customerIds: ['x'] } })).status, 400);
   assert.equal((await admin('POST', '/records/delete-customers', { body: {} })).status, 400);
   assert.equal((await admin('POST', '/records/delete-customers', { body: { customerIds: Array(1001).fill('00000000-0000-4000-8000-000000000000') } })).status, 400);
+});
+
+test('deleting #3 of 5 shifts #4,#5 down; numbers stay 1..N; next new customer continues after N', async () => {
+  const ids = [];
+  for (let i = 1; i <= 5; i++) ids.push((await pool.query('INSERT INTO customers (name) VALUES ($1) RETURNING id', [`c${i}`])).rows[0].id);
+  const r = await admin('POST', '/records/delete-customers', { body: { customerIds: [ids[2]] } });
+  assert.equal(r.status, 200);
+  const rows = (await pool.query('SELECT name, customer_number::int n FROM customers ORDER BY n')).rows;
+  assert.deepEqual(rows.map((x) => [x.name, x.n]), [['c1', 1], ['c2', 2], ['c4', 3], ['c5', 4]]);
+  const nx = (await pool.query("INSERT INTO customers (name) VALUES ('new') RETURNING customer_number::int n")).rows[0].n;
+  assert.equal(nx, 5);
 });

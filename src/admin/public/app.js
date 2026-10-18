@@ -600,7 +600,7 @@ async function deleteCustomerRecords(rows) {
   const sold = targets.filter((r) => r.sale_status === 'sold').length;
   const msg = `تحذير!\n\nسيتم حذف ${targets.length} سجل (بدون ترخيص) نهائيًا.` +
     (sold ? `\nمنها ${sold} سجل مباع.` : '') +
-    '\nلن تتأثر أي تراخيص، ولن يُعاد ترقيم العملاء.\nلا يمكن التراجع عن هذه العملية.\n\nهل أنت متأكد؟';
+    '\nلن تتأثر أي تراخيص، وسيُعاد ترقيم العملاء ليبقى 1..N بدون فجوات.\nلا يمكن التراجع عن هذه العملية.\n\nهل أنت متأكد؟';
   if (!confirm(msg)) return;
   try {
     const data = await api('/records/delete-customers', {

@@ -373,7 +373,8 @@ async function assignCustomerToLicense(licenseId, input = {}, db = pool) {
 /**
  * Permanently deletes customer records that have NO license attached.
  * Customers that still own a license are never touched (reported as skipped).
- * Customer numbers are NOT renumbered. One transaction; the audit write is strict.
+ * Afterwards ALL customers are renumbered 1..N with no gaps (delete #3 => old #4 becomes #3).
+ * One transaction (the number-protection trigger is disabled only inside it); the audit write is strict.
  */
 async function deleteCustomersWithoutLicense(customerIds, auditCtx = {}, db = pool) {
   if (!Array.isArray(customerIds) || customerIds.length === 0) {
@@ -397,7 +398,24 @@ async function deleteCustomersWithoutLicense(customerIds, auditCtx = {}, db = po
       await audit.record(client, { ...auditCtx, action: 'customer.delete', targetType: 'customer', targetId: row.id,
         meta: { customerNumber: row.n } }, { strict: true });
     }
-    return { deleted: del.rowCount, skipped: ids.length - del.rowCount };
+    let renumbered = false;
+    if (del.rowCount > 0) {
+      await client.query('LOCK TABLE customers IN ACCESS EXCLUSIVE MODE');
+      await client.query('ALTER TABLE customers DISABLE TRIGGER trg_customers_protect_customer_number');
+      // Step 1 moves every number out of the way (unique index), step 2 assigns 1..N.
+      await client.query('UPDATE customers SET customer_number = customer_number + 1000000000000');
+      await client.query(`
+        UPDATE customers c
+        SET customer_number = r.rn
+        FROM (SELECT id, ROW_NUMBER() OVER (ORDER BY customer_number) AS rn FROM customers) r
+        WHERE c.id = r.id`);
+      await client.query('ALTER TABLE customers ENABLE TRIGGER trg_customers_protect_customer_number');
+      await client.query(
+        'UPDATE customer_number_counter SET last_number = (SELECT COALESCE(MAX(customer_number), 0) FROM customers) WHERE id = 1'
+      );
+      renumbered = true;
+    }
+    return { deleted: del.rowCount, skipped: ids.length - del.rowCount, renumbered };
   });
 }
 
